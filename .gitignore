@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/.vercel
+
+# Build outputs
+backend/dist/
+frontend/dist/
+
+# Prisma generated
+prisma/generated/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Uploads (user-uploaded files, not seed data)
+backend/uploads/
+
+# Coverage
+coverage/
+.nyc_output/

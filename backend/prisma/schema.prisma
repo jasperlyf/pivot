@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Dataset {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  records   Record[]
+
+  @@map("datasets")
+}
+
+model Record {
+  id        String   @id @default(cuid())
+  datasetId String   @map("dataset_id")
+  date      DateTime
+  assetName String   @map("asset_name")
+  value     Float
+  category  String
+
+  dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@map("records")
+}

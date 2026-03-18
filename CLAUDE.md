@@ -23,7 +23,7 @@ Think: Notion + Stripe Dashboard + Tableau-lite
 | Layer    | Technology |
 |----------|-----------|
 | Frontend | Next.js 16 (App Router) + TypeScript + TailwindCSS + Recharts |
-| Backend  | Node.js + Express |
+| Backend  | Node.js + Express + yahoo-finance2 |
 | Database | PostgreSQL via Supabase |
 | DB Client | @supabase/supabase-js (HTTPS — replaces Prisma TCP which failed on this network) |
 | Hosting  | Vercel (frontend) + Render (backend) |
@@ -110,17 +110,18 @@ NEXT_PUBLIC_API_URL=https://pivot-api-74sf.onrender.com
 
 ---
 
-## Seed Data Reference
+## Live Market Data
 
-Dataset ID: `seed_dataset_001`
-Dataset name: `Market Prices 2021–2024`
+Source: Yahoo Finance via `yahoo-finance2` npm package (free, no API key)
+Cache: 5-min in-memory TTL
 
-| Asset | Category | Records |
-|-------|----------|---------|
-| SPY   | equity   | 48      |
-| ACWI  | equity   | 48      |
-| BTC   | crypto   | 48      |
-| ETH   | crypto   | 48      |
+Default symbols: SPY, QQQ, ACWI, BTC-USD, ETH-USD, GLD
+Users can search and add any valid Yahoo Finance ticker.
+
+Routes:
+- `GET /market-data/quotes?symbols=SPY,QQQ` — real-time quote + daily change
+- `GET /market-data/history?symbols=SPY&period=1y&interval=1mo` — historical OHLCV
+- `GET /market-data/search?q=nvidia` — ticker search
 
 ---
 

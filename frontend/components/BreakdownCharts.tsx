@@ -42,9 +42,9 @@ export function BreakdownBar({ data }: BreakdownProps) {
   }));
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-      <h3 className="text-sm font-semibold text-slate-900 mb-0.5">Average Price by Asset</h3>
-      <p className="text-xs text-slate-400 mb-4">Mean monthly closing price</p>
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-5">
+      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-0.5">Average Price by Asset</h3>
+      <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">Mean monthly closing price</p>
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
           <XAxis dataKey="asset" {...sharedAxis} />
@@ -73,9 +73,9 @@ export function BreakdownPie({ data }: BreakdownProps) {
   const total = chartData.reduce((s, r) => s + r.value, 0);
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-      <h3 className="text-sm font-semibold text-slate-900 mb-0.5">Market Share</h3>
-      <p className="text-xs text-slate-400 mb-4">Data points by category</p>
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-5">
+      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-0.5">Market Share</h3>
+      <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">Data points by category</p>
       <ResponsiveContainer width="100%" height={200}>
         <PieChart>
           <Pie data={chartData} dataKey="value" nameKey="name"
@@ -91,7 +91,7 @@ export function BreakdownPie({ data }: BreakdownProps) {
             contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
           />
           <Legend
-            formatter={(v) => <span className="text-xs text-slate-600 capitalize">{v}</span>}
+            formatter={(v) => <span className="text-xs text-slate-600 dark:text-slate-400 capitalize">{v}</span>}
             iconType="circle" iconSize={8}
           />
         </PieChart>

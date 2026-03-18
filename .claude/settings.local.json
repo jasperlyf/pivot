@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma:*)",
+      "Bash(node -e \"require\\(''dotenv''\\).config\\(\\); const url = process.env.DATABASE_URL; const match = url.match\\(/^\\([^:]+\\):\\\\/\\\\/\\([^:]+\\):\\(.+\\)@\\(.+\\)$/\\); if\\(match\\) { console.log\\(''protocol:'', match[1]\\); console.log\\(''user:'', match[2]\\); console.log\\(''host:'', match[4]\\); } else { console.log\\(''Could not parse URL''\\); }\")",
+      "Bash(npm run:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)"
+    ]
+  }
+}

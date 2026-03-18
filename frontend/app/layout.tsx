@@ -1,30 +1,27 @@
 import type { Metadata } from 'next';
 import { Geist } from 'next/font/google';
 import './globals.css';
-import Sidebar from '@/components/Sidebar';
-import TopBar from '@/components/TopBar';
 import { AppProvider } from '@/lib/context';
+import { ThemeProvider } from 'next-themes';
+import ThemeSync from '@/components/ThemeSync';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
 
 export const metadata: Metadata = {
   title: 'Pivot — Financial Dashboard',
-  description: 'Upload datasets and analyze them interactively',
+  description: 'Interactive financial dashboard',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${geist.variable} antialiased bg-slate-50`}>
-        <AppProvider>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar />
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <TopBar />
-              <main className="flex-1 overflow-y-auto p-6">{children}</main>
-            </div>
-          </div>
-        </AppProvider>
+        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
+          <AppProvider>
+            <ThemeSync />
+            {children}
+          </AppProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

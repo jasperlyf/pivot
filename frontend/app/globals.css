@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
 :root {
   --background: #F8FAFC;
   --foreground: #0F172A;
+}
+
+.dark {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
 }
 
 body {
@@ -13,3 +20,16 @@ body {
 }
 
 * { box-sizing: border-box; }
+
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-25%); }
+}
+
+.animate-ticker {
+  animation: ticker 120s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
+}

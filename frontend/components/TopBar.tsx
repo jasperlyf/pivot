@@ -85,8 +85,8 @@ export default function TopBar() {
                 </div>
                 {results.length > 0 ? (
                   <ul>
-                    {results.map((r) => (
-                      <li key={r.symbol}>
+                    {results.map((r, i) => (
+                      <li key={`${r.symbol}-${i}`}>
                         <button
                           onClick={() => addSymbol(r.symbol)}
                           className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-slate-50 text-left transition-colors"

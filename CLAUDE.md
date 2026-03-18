@@ -8,29 +8,29 @@ Update this file as work progresses.
 ## Todo (Active)
 
 ### 1. Workspace System
-- [ ] Create `workspaces` table in Supabase (id, user_id, name, created_at, updated_at)
-- [ ] Create `workspace_views` table (id, workspace_id, name, config JSON, created_at)
-- [ ] Create `workspace_notes` table (id, workspace_id, content, updated_at)
-- [ ] Create `workspace_documents` table (id, workspace_id, name, url, created_at)
-- [ ] Build `/workspace` — list page (create new, list existing)
-- [ ] Build `/workspace/[id]` — detail page with Views / Notes / Documents tabs
+- [x] Create `workspaces` table in Supabase (id, user_id, name, created_at, updated_at)
+- [x] Create `workspace_views` table (id, workspace_id, name, config JSON, created_at)
+- [x] Create `workspace_notes` table (id, workspace_id, content, updated_at)
+- [x] Create `workspace_documents` table (id, workspace_id, name, url, created_at)
+- [x] Build `/workspace` — list page (create new, list existing)
+- [x] Build `/workspace/[id]` — detail page with Views / Notes / Documents tabs
 
 ### 2. Save View Functionality
-- [ ] Add "Save to Workspace" button on Comparisons page
-- [ ] Modal: pick workspace + name the view
-- [ ] Save config (symbols, date range, mode) to `workspace_views`
+- [x] Add "Save to Workspace" button on Comparisons page
+- [x] Modal: pick workspace + name the view
+- [x] Save config (symbols, date range, mode) to `workspace_views`
 
 ### 3. Render Saved Views (interactive)
-- [ ] Load each saved view config in workspace detail
-- [ ] Re-render live Comparison chart from config (fully interactive)
+- [x] Load each saved view config in workspace detail
+- [x] Re-render live Comparison chart from config (fully interactive)
 
 ### 4. Dashboard Redesign
-- [ ] Replace chart-heavy dashboard with home / control center
-- [ ] Sections: Overview Stats, Recent Workspaces, Pinned Workspaces, Recent Docs, Quick Actions
+- [x] Replace chart-heavy dashboard with home / control center
+- [x] Sections: Overview Stats, Recent Workspaces, Recent Docs, Quick Actions
 
 ### 5. Document Upload
-- [ ] Create Supabase Storage bucket for workspace documents
-- [ ] Upload UI in workspace detail → Documents section
+- [x] Create Supabase Storage bucket for workspace documents
+- [x] Upload UI in workspace detail → Documents section
 
 ### 6. Notes
 - [ ] Editable markdown/text field in workspace detail → Notes section
@@ -54,115 +54,42 @@ Not a trading platform, not a portfolio tracker, not a brokerage app.
 
 ## Core Product Model (MUST FOLLOW)
 
-### 1) EXPLORE — users analyze markets
-Pages:
-- Comparisons (multi-asset charts, metrics)
-- Explore (single asset deep dive)
+Pivot is a **financial analysis tool** focused on comparison, strategy simulation, and data exploration. The UI must be premium, minimal, and fast to understand.
 
-### 2) CREATE — users construct strategies
-Pages:
-- Portfolio Simulator
-- Custom Index Builder
+### Navigation
 
-### 3) PRESENT — Workspace (NEW CORE LAYER)
+| Route | Label | Purpose |
+|---|---|---|
+| `/` | Home | Workspace hub — stats, pinned workspaces, recents, quick actions |
+| `/explore` | Explore | Search assets, trending, quick chart preview |
+| `/comparisons` | Compare | Direct multi-asset overlay, no weighting |
+| `/workspace` | Workspaces | List + create workspaces (in sidebar below Builder group) |
+| `/index-builder` | Custom Index | **Core feature** — build strategies, assign weights, compare vs benchmark (Builder group) |
+| `/portfolio` | Portfolio Simulator | Simulate portfolio performance (Builder group) |
+| `/data-sources` | Uploads | Upload datasets, view files, use in charts |
+| `/settings` | Settings | User preferences |
 
-**Workspace = interactive financial presentation + organisation layer.**
+Builder group is a collapsible section in the sidebar containing Custom Index and Portfolio Simulator.
+No global TopBar — each page manages its own date range.
 
-This is the most important feature in the refactor.
+### Home — Workspace Hub
+- Overview Stats: total workspaces, saved views, documents
+- Favourite Workspaces: pinned workspaces in amber-bordered grid cards
+- Recent Workspaces: list with star/pin toggle
+- Quick Actions: New Workspace, New Comparison, Upload Document
+- Recent Documents: last 5 uploaded docs across all workspaces
 
-A Workspace acts like a **client case folder** — it contains everything needed for a discussion or presentation.
+### Custom Index — Core Differentiator
+- Build custom weighted portfolios
+- Compare vs benchmark
+- Performance, risk, and return metrics
+- Main demo feature of the app
 
-#### Workspace contains:
-
-**Views (CORE)** — saved analysis configurations (initially Comparison views only)
-- Stores: symbols, date range, mode (price / %), relevant settings
-- Store configuration ONLY — do NOT store chart data
-- Re-render live charts when loaded
-- Views must remain fully interactive (not snapshots or images)
-
-**Notes** — text/markdown for talking points, investment thesis, client notes
-
-**Documents / Data** — PDFs, images, CSVs linked to the workspace
-
-**Key principle:** all entities link via `workspace_id` (views, notes, documents, datasets). No complex tagging system.
-
-**Critical concept:** Workspace views are live and interactive — "live dashboards arranged like slides."
-
----
-
-## Navigation (Updated)
-
-```
-Dashboard
-Explore
-Comparisons
-
-Builder (Portfolio + Index)
-
-Workspace  ← NEW CORE PAGE
-
-Data
-Settings
-```
-
----
-
-## Dashboard Redesign (Required)
-
-Dashboard becomes a **home / control center** with **no heavy charts**.
-
-Sections:
-1. **Overview Stats** — total workspaces, total views, total documents
-2. **Recent Workspaces** (primary) — name, last updated, number of views — clickable
-3. **Favourite / Pinned Workspaces** — quick access
-4. **Recent Documents** — file name, associated workspace
-5. **Quick Actions** — create workspace, create comparison, upload document
-
-Constraints:
-- NO heavy charts on dashboard
-- NO duplication of comparison features
-
----
-
-## MVP Scope (Strict)
-
-Build ONLY:
-- Workspace list page
-- Workspace detail page
-- Save comparison view into workspace
-- Render saved views (interactive)
-- Basic notes
-- Basic document upload (Supabase storage)
-- Dashboard redesign
-
-Do NOT build:
-- Document parsing
-- AI features
-- Complex tagging
-- Multiple view types (Comparison only)
-
----
-
-## Implementation Priority
-
-1. Workspace system
-2. Save View functionality
-3. Dashboard redesign
-4. Document upload
-5. Notes
-
----
-
-## Future Direction (DO NOT IMPLEMENT NOW)
-
-Pivot will evolve into a **client financial presentation platform**.
-
-Future features:
-- Insurance / financial document parsing
-- AI-generated summaries
-- Advisor workflows
-
-Target users: financial advisors, consultants, sales teams
+### UX Principles
+- Minimal, clean — no clutter
+- Avoid portfolio-tracking language
+- Fast visual comparison
+- No nested nav, no unnecessary pages
 
 ---
 
@@ -215,35 +142,19 @@ NEXT_PUBLIC_API_URL=https://pivot-api-74sf.onrender.com
 
 ---
 
-## Current Pages (Pre-Refactor)
+## Current Pages
 
 | Page | Route | Status |
 |------|-------|--------|
-| Dashboard | `/` | ✅ Built (chart-heavy; will be redesigned) |
+| Home | `/` | ✅ Workspace hub (stats, pinned, recents, quick actions) |
 | Explore | `/explore` | ✅ Single-asset deep dive |
-| Comparisons | `/comparisons` | ✅ Multi-asset comparisons |
+| Compare | `/comparisons` | ✅ Multi-asset overlay + Save View to workspace |
+| Workspaces | `/workspace` | ✅ List + create workspaces |
+| Workspace Detail | `/workspace/[id]` | ✅ Views / Notes / Documents tabs |
+| Custom Index | `/index-builder` | ✅ Built |
 | Portfolio Simulator | `/portfolio` | ✅ Built |
-| Index Lab | `/index-builder` | ✅ Built |
 | Data Sources | `/data-sources` | ✅ Built |
 | Settings | `/settings` | ✅ Built |
-
----
-
-## Workspace (To Build)
-
-### Workspace List Page
-- Create new workspace
-- List existing workspaces
-
-### Workspace Detail Page
-Sections:
-- **Views** — list of saved views, each renders a live interactive chart
-- **Notes** — editable text/markdown
-- **Documents** — uploaded files list + preview
-
-### Save View
-- From Comparisons: save current configuration into a Workspace
-- Store config only, do not store chart data
 
 ---
 
@@ -298,3 +209,7 @@ cd frontend && npm run dev
 | 2026-03-18 | Implemented light/dark mode via `next-themes` + Tailwind v4 `@custom-variant dark` | Finance dashboards expected in dark mode; toggle in Sidebar (Moon/Sun icon) |
 | 2026-03-18 | Added favourite toggle button on Explore page | Users can add assets to dashboard directly from search without going to Settings |
 | 2026-03-18 | Product refactor: Explore → Create → Present, Workspace added | New core product model and navigation |
+| 2026-03-18 | Added Workspaces to sidebar below Builder group | Users need direct nav access to workspace list |
+| 2026-03-18 | Renamed Dashboard → Home; Home is workspace hub not market overview | Home should centre the user's work, not market data |
+| 2026-03-18 | Removed TickerTape and global TopBar from layout | TickerTape distracting; each page owns its own date range |
+| 2026-03-18 | Builder collapsible group in sidebar (Custom Index + Portfolio Simulator) | Keeps nav clean while preserving both builder tools |

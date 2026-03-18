@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useApp, DATE_PRESETS, DateRange } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
-import { Search, Plus, X } from 'lucide-react';
+import { Search, Plus, X, Bookmark, Check } from 'lucide-react';
 import SmartInsights from '@/components/SmartInsights';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -248,6 +248,14 @@ export default function ComparisonsPage() {
   const [slots, setSlots]             = useState<string[]>(['', '']);
   const [hiddenStats, setHiddenStats] = useState<Set<string>>(new Set());
   const [statsWindow, setStatsWindow] = useState<'1Y' | '3Y' | '5Y'>('3Y');
+
+  // Save View modal
+  const [saveOpen, setSaveOpen]           = useState(false);
+  const [saveWorkspaces, setSaveWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const [saveWsId, setSaveWsId]           = useState('');
+  const [saveViewName, setSaveViewName]   = useState('');
+  const [saveDone, setSaveDone]           = useState(false);
+  const [saving, setSaving]               = useState(false);
 
   // Custom indexes
   const [customIndexes, setCustomIndexes] = useState<CustomIndex[]>([]);
@@ -500,6 +508,36 @@ export default function ComparisonsPage() {
 
   const hasData = activeSymbols.length > 0;
 
+  async function openSaveModal() {
+    if (!user) return;
+    const { data } = await supabase
+      .from('workspaces')
+      .select('id, name')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false });
+    setSaveWorkspaces(data ?? []);
+    setSaveWsId(data?.[0]?.id ?? '');
+    setSaveViewName('');
+    setSaveDone(false);
+    setSaveOpen(true);
+  }
+
+  async function saveView() {
+    if (!saveWsId || !saveViewName.trim()) return;
+    setSaving(true);
+    await supabase.from('workspace_views').insert({
+      workspace_id: saveWsId,
+      name: saveViewName.trim(),
+      config: { symbols: slots.filter(Boolean), period: dateRange.period, interval: dateRange.interval, mode },
+    });
+    await supabase
+      .from('workspaces')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', saveWsId);
+    setSaving(false);
+    setSaveDone(true);
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -521,6 +559,15 @@ export default function ComparisonsPage() {
             <button onClick={() => setMode('pct')}   className={`px-3 py-1.5 transition-colors ${mode === 'pct'   ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>% Return</button>
             <button onClick={() => setMode('price')} className={`px-3 py-1.5 transition-colors ${mode === 'price' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>Price</button>
           </div>
+          {hasData && (
+            <button
+              onClick={openSaveModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg transition-colors"
+            >
+              <Bookmark size={13} />
+              Save View
+            </button>
+          )}
         </div>
       </div>
 
@@ -884,6 +931,103 @@ export default function ComparisonsPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Save View Modal */}
+      {saveOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Save View to Workspace</h2>
+              <button onClick={() => setSaveOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={16} />
+              </button>
+            </div>
+
+            {saveDone ? (
+              <div className="text-center py-6 space-y-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center mx-auto">
+                  <Check size={20} className="text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">View saved!</p>
+                <button
+                  onClick={() => setSaveOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Config summary */}
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">Config to save</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {slots.filter(Boolean).map((s) => (
+                      <span key={s} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-md">
+                        {s.startsWith('idx:') ? (customIndexes.find((i) => i.id === s.slice(4))?.name ?? 'Custom Index') : s}
+                      </span>
+                    ))}
+                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs rounded-md">
+                      {dateRange.label}
+                    </span>
+                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs rounded-md capitalize">
+                      {mode === 'pct' ? '% Return' : 'Price'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* View name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">View name</label>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="e.g. Tech vs Macro – 1Y"
+                    value={saveViewName}
+                    onChange={(e) => setSaveViewName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveView(); }}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Workspace picker */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Workspace</label>
+                  {saveWorkspaces.length === 0 ? (
+                    <p className="text-sm text-slate-400 dark:text-slate-500">No workspaces found. Create one first.</p>
+                  ) : (
+                    <select
+                      value={saveWsId}
+                      onChange={(e) => setSaveWsId(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {saveWorkspaces.map((w) => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={saveView}
+                    disabled={!saveViewName.trim() || !saveWsId || saving}
+                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {saving ? 'Saving…' : 'Save View'}
+                  </button>
+                  <button
+                    onClick={() => setSaveOpen(false)}
+                    className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

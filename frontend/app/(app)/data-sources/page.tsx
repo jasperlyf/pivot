@@ -27,17 +27,20 @@ export default function DataSourcesPage() {
 
   useEffect(() => { load(); }, []);
 
+  const nameFromFile = (file: File) =>
+    file.name.replace(/\.[^/.]+$/, '');
+
   const upload = async (file: File) => {
-    if (!datasetName.trim()) { setStatus({ type: 'error', msg: 'Enter a dataset name first' }); return; }
+    const name = datasetName.trim() || nameFromFile(file);
     setUploading(true);
     setStatus(null);
     const form = new FormData();
     form.append('file', file);
-    form.append('datasetName', datasetName);
+    form.append('datasetName', name);
     try {
       const r = await fetch(`${api}/upload`, { method: 'POST', body: form });
       if (!r.ok) throw new Error((await r.json()).error);
-      setStatus({ type: 'success', msg: 'Dataset uploaded successfully' });
+      setStatus({ type: 'success', msg: `"${name}" uploaded successfully` });
       setDatasetName('');
       load();
     } catch (e: any) {
@@ -68,7 +71,7 @@ export default function DataSourcesPage() {
       {/* Upload zone */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-6 space-y-4">
         <input
-          placeholder="Dataset name (e.g. Q1 2025 Sales)"
+          placeholder="Dataset name — leave blank to use file name"
           value={datasetName}
           onChange={(e) => setDatasetName(e.target.value)}
           className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 placeholder:text-slate-400 dark:placeholder:text-slate-600"
@@ -90,7 +93,10 @@ export default function DataSourcesPage() {
           </p>
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">CSV or Excel (.xlsx) — date, asset_name, value, category columns</p>
           <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) { if (!datasetName.trim()) setDatasetName(nameFromFile(f)); upload(f); }
+            }} />
         </div>
 
         {status && (

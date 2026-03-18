@@ -47,6 +47,8 @@ interface AppContextType {
   settings: UserSettings;
   saveSettings: (patch: Partial<UserSettings>) => Promise<void>;
   api: string;
+  globalDateRange: DateRange;
+  setGlobalDateRange: (dr: DateRange) => void;
 }
 
 const AppContext = createContext<AppContextType>({
@@ -58,6 +60,8 @@ const AppContext = createContext<AppContextType>({
   settings: DEFAULT_SETTINGS,
   saveSettings: async () => {},
   api: API,
+  globalDateRange: DATE_PRESETS[3],
+  setGlobalDateRange: () => {},
 });
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -67,6 +71,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading]       = useState(true);
   const [symbols, setSymbolsState]  = useState<string[]>(DEFAULT_FAVOURITES);
   const [settings, setSettingsState] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [globalDateRange, setGlobalDateRange] = useState<DateRange>(DATE_PRESETS[3]);
 
   // Resolve session on mount
   useEffect(() => {
@@ -152,7 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, loading, signOut, symbols, setSymbols, settings, saveSettings, api: API }}>
+    <AppContext.Provider value={{ user, loading, signOut, symbols, setSymbols, settings, saveSettings, api: API, globalDateRange, setGlobalDateRange }}>
       {children}
     </AppContext.Provider>
   );

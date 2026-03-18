@@ -41,7 +41,7 @@ export default function PivotChart({ data, metric }: Props) {
   const byDate = new Map<string, Record<string, number>>();
 
   for (const row of data) {
-    if (!byDate.has(row.date)) byDate.set(row.date, { date: row.date } as Record<string, number>);
+    if (!byDate.has(row.date)) byDate.set(row.date, { date: row.date } as unknown as Record<string, number>);
     byDate.get(row.date)![row.asset] = row.value;
   }
 

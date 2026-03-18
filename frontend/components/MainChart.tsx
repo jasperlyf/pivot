@@ -56,7 +56,7 @@ export default function MainChart({ data }: Props) {
   const assets = [...new Set(data.map((r) => r.asset))];
   const byDate = new Map<string, Record<string, number>>();
   for (const row of data) {
-    if (!byDate.has(row.date)) byDate.set(row.date, { date: row.date } as Record<string, number>);
+    if (!byDate.has(row.date)) byDate.set(row.date, { date: row.date } as unknown as Record<string, number>);
     byDate.get(row.date)![row.asset] = row.value;
   }
   const chartData = [...byDate.values()].sort((a, b) => (a.date > b.date ? 1 : -1));

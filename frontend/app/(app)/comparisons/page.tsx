@@ -327,7 +327,14 @@ export default function ComparisonsPage() {
     if (!missing.length) return;
     fetch(`${api}/market-data/quotes?symbols=${missing.join(',')}`)
       .then((r) => r.json())
-      .then((data: QuoteData[]) => setQuotes((p) => { const n = { ...p }; data.forEach((q) => { n[q.symbol] = q; }); return n; }))
+      .then((data: QuoteData[] | { error?: string }) => {
+        if (!Array.isArray(data)) return;
+        setQuotes((p) => {
+          const n = { ...p };
+          data.forEach((q) => { n[q.symbol] = q; });
+          return n;
+        });
+      })
       .catch(() => {});
   }, [symKey, api]); // eslint-disable-line
 
@@ -348,7 +355,14 @@ export default function ComparisonsPage() {
     setStatsLoading(true);
     fetch(`${api}/market-data/stats?symbols=${missing.join(',')}`)
       .then((r) => r.json())
-      .then((data: AssetStats[]) => setStats((p) => { const n = { ...p }; data.forEach((d) => { n[d.symbol] = d; }); return n; }))
+      .then((data: AssetStats[] | { error?: string }) => {
+        if (!Array.isArray(data)) return;
+        setStats((p) => {
+          const n = { ...p };
+          data.forEach((d) => { n[d.symbol] = d; });
+          return n;
+        });
+      })
       .catch(() => {})
       .finally(() => setStatsLoading(false));
   }, [symKey, api]); // eslint-disable-line

@@ -71,7 +71,7 @@ router.get('/quotes', async (req, res) => {
   try {
     const symbols = (req.query.symbols || DEFAULT_SYMBOLS.join(',')).split(',').map(s => s.trim().toUpperCase());
 
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       symbols.map((symbol) =>
         cached(`quote:${symbol}`, () =>
           yahooFinance.quoteSummary(symbol, { modules: ['price', 'summaryDetail', 'defaultKeyStatistics'] })
@@ -107,7 +107,32 @@ router.get('/quotes', async (req, res) => {
       )
     );
 
-    res.json(results);
+    const rows = results.map((r, i) => {
+      const symbol = symbols[i];
+      if (r.status === 'fulfilled') return r.value;
+      return {
+        symbol,
+        name:     SYMBOL_META[symbol]?.name ?? symbol,
+        category: SYMBOL_META[symbol]?.category ?? 'equity',
+        price: null,
+        change: null,
+        changePct: null,
+        prevClose: null,
+        open: null,
+        dayHigh: null,
+        dayLow: null,
+        volume: null,
+        avgVolume: null,
+        marketCap: null,
+        week52High: null,
+        week52Low: null,
+        expenseRatio: null,
+        currency: 'USD',
+        error: r.reason?.message ?? 'Quote fetch failed',
+      };
+    });
+
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

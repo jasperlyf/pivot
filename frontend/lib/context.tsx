@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/browser';
 import type { User } from '@supabase/supabase-js';
 
@@ -61,7 +61,8 @@ const AppContext = createContext<AppContextType>({
 });
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const supabase = createClient();
+  // Lazy init: only create Supabase client on the client side (not during SSG build)
+  const supabase = useRef(typeof window !== 'undefined' ? createClient() : null);
   const [user, setUser]             = useState<User | null>(null);
   const [loading, setLoading]       = useState(true);
   const [symbols, setSymbolsState]  = useState<string[]>(DEFAULT_FAVOURITES);
@@ -69,11 +70,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Resolve session on mount
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    if (!supabase.current) { setLoading(false); return; }
+    supabase.current.auth.getUser().then(({ data }) => {
       setUser(data.user);
       setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.current.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
     return () => subscription.unsubscribe();
@@ -87,7 +89,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    supabase
+    if (!supabase.current) return;
+
+    supabase.current
       .from('user_favourites')
       .select('symbol')
       .eq('user_id', user.id)
@@ -96,7 +100,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (data && data.length > 0) setSymbolsState(data.map((r) => r.symbol));
       });
 
-    supabase
+    supabase.current
       .from('user_settings')
       .select('currency, metric, group_by, theme')
       .eq('user_id', user.id)
@@ -116,10 +120,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Persist favourites to DB whenever they change
   const setSymbols = async (newSymbols: string[]) => {
     setSymbolsState(newSymbols);
-    if (!user) return;
-    await supabase.from('user_favourites').delete().eq('user_id', user.id);
+    if (!user || !supabase.current) return;
+    await supabase.current.from('user_favourites').delete().eq('user_id', user.id);
     if (newSymbols.length) {
-      await supabase.from('user_favourites').insert(
+      await supabase.current.from('user_favourites').insert(
         newSymbols.map((symbol, i) => ({ user_id: user.id, symbol, order: i }))
       );
     }
@@ -129,8 +133,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const saveSettings = async (patch: Partial<UserSettings>) => {
     const next = { ...settings, ...patch };
     setSettingsState(next);
-    if (!user) return;
-    await supabase.from('user_settings').upsert({
+    if (!user || !supabase.current) return;
+    await supabase.current.from('user_settings').upsert({
       user_id:  user.id,
       currency: next.currency,
       metric:   next.metric,
@@ -141,7 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await supabase.current?.auth.signOut();
     setUser(null);
     setSymbolsState(DEFAULT_FAVOURITES);
     setSettingsState(DEFAULT_SETTINGS);

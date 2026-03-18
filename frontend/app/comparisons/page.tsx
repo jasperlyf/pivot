@@ -57,7 +57,7 @@ function ComparePanel({
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false}
             tickFormatter={(v) => `${v}`} width={40} />
           <Tooltip
-            formatter={(v: number) => [`${v}`, 'Index (base 100)']}
+            formatter={(v) => [`${v}`, 'Index (base 100)']}
             contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
           />
           <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} dot={false} />

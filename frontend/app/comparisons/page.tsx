@@ -97,7 +97,7 @@ export default function ComparisonsPage() {
     const sorted = [...allData].sort((a, b) => a.date.localeCompare(b.date));
     for (const r of sorted) {
       if (!baselines[r.asset]) baselines[r.asset] = r.value;
-      if (!byDate.has(r.date)) byDate.set(r.date, { date: r.date } as Record<string, number>);
+      if (!byDate.has(r.date)) byDate.set(r.date, { date: r.date } as unknown as Record<string, number>);
       byDate.get(r.date)![r.asset] = parseFloat(((r.value / baselines[r.asset]) * 100).toFixed(2));
     }
     return [...byDate.values()];

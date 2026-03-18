@@ -19,7 +19,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 }
 
 export default function ExplorePage() {
-  const { selectedId, api } = useApp();
+  const { selectedId, api, dateRange } = useApp();
   const [groupBy, setGroupBy] = useState('month');
   const [metric, setMetric] = useState('avg');
   const [category, setCategory] = useState('');
@@ -31,19 +31,19 @@ export default function ExplorePage() {
   // Fetch all assets on mount
   useEffect(() => {
     if (!selectedId) return;
-    fetch(`${api}/pivot-data?dataset_id=${selectedId}&group_by=month&metric=avg`)
+    fetch(`${api}/pivot-data?dataset_id=${selectedId}&group_by=month&metric=avg&start_date=${dateRange.start}&end_date=${dateRange.end}`)
       .then((r) => r.json())
       .then((d: PivotRow[]) => {
         const assets = [...new Set(d.map((r) => r.asset))];
         setAllAssets(assets);
         setSelectedAssets(assets);
       });
-  }, [selectedId, api]);
+  }, [selectedId, api, dateRange]);
 
   useEffect(() => {
     if (!selectedId) return;
     setLoading(true);
-    const params = new URLSearchParams({ dataset_id: selectedId, group_by: groupBy, metric });
+    const params = new URLSearchParams({ dataset_id: selectedId, group_by: groupBy, metric, start_date: dateRange.start, end_date: dateRange.end });
     if (category) params.append('category', category);
     fetch(`${api}/pivot-data?${params}`)
       .then((r) => r.json())
@@ -51,7 +51,7 @@ export default function ExplorePage() {
         setData(selectedAssets.length ? d.filter((r) => selectedAssets.includes(r.asset)) : d);
         setLoading(false);
       });
-  }, [selectedId, groupBy, metric, category, api]);
+  }, [selectedId, groupBy, metric, category, api, dateRange]);
 
   const filtered = selectedAssets.length ? data.filter((r) => selectedAssets.includes(r.asset)) : data;
 

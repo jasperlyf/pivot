@@ -8,7 +8,7 @@ const router = express.Router();
 // Query params: dataset_id, group_by (day|week|month), metric (sum|avg|change), asset, category
 router.get('/', async (req, res) => {
   try {
-    const { dataset_id, group_by = 'month', metric = 'avg', asset, category } = req.query;
+    const { dataset_id, group_by = 'month', metric = 'avg', asset, category, start_date, end_date } = req.query;
 
     if (!dataset_id) return res.status(400).json({ error: 'dataset_id is required' });
 
@@ -20,6 +20,8 @@ router.get('/', async (req, res) => {
 
     if (asset) query = query.eq('asset_name', asset);
     if (category) query = query.eq('category', category);
+    if (start_date) query = query.gte('date', start_date);
+    if (end_date) query = query.lte('date', end_date);
 
     const { data: records, error } = await query;
     if (error) throw error;

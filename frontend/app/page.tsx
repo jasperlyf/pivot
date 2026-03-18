@@ -10,17 +10,21 @@ import DataTable from '@/components/DataTable';
 interface PivotRow { date: string; asset: string; category: string; value: number; }
 
 export default function Dashboard() {
-  const { selectedId, api } = useApp();
+  const { selectedId, api, dateRange } = useApp();
   const [data, setData] = useState<PivotRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!selectedId) return;
     setLoading(true);
-    fetch(`${api}/pivot-data?dataset_id=${selectedId}&group_by=month&metric=avg`)
+    const params = new URLSearchParams({
+      dataset_id: selectedId, group_by: 'month', metric: 'avg',
+      start_date: dateRange.start, end_date: dateRange.end,
+    });
+    fetch(`${api}/pivot-data?${params}`)
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); });
-  }, [selectedId, api]);
+  }, [selectedId, api, dateRange]);
 
   // Compute KPIs from data
   const assets = [...new Set(data.map((r) => r.asset))];
@@ -44,28 +48,28 @@ export default function Dashboard() {
       title: 'Best Performer',
       value: bestAsset || '—',
       change: bestAsset ? totalReturn(bestAsset) : undefined,
-      subtitle: '2021 → 2024',
+      subtitle: dateRange.label,
       color: 'emerald' as const,
     },
     {
       title: 'S&P 500 (SPY)',
       value: latestValue('SPY') ? `$${latestValue('SPY').toFixed(2)}` : '—',
       change: totalReturn('SPY') || undefined,
-      subtitle: 'Dec 2024',
+      subtitle: dateRange.label,
       color: 'indigo' as const,
     },
     {
       title: 'Bitcoin (BTC)',
       value: latestValue('BTC') ? `$${latestValue('BTC').toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—',
       change: totalReturn('BTC') || undefined,
-      subtitle: 'Dec 2024',
+      subtitle: dateRange.label,
       color: 'amber' as const,
     },
     {
       title: 'Worst Performer',
       value: worstAsset || '—',
       change: worstAsset ? totalReturn(worstAsset) : undefined,
-      subtitle: '2021 → 2024',
+      subtitle: dateRange.label,
       color: 'rose' as const,
     },
   ];

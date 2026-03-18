@@ -18,17 +18,17 @@ function fmt(v: number) {
 }
 
 function ComparePanel({
-  api, datasetId, assets: assetOptions, label, color,
-}: { api: string; datasetId: string; assets: string[]; label: string; color: string }) {
+  api, datasetId, assets: assetOptions, label, color, startDate, endDate,
+}: { api: string; datasetId: string; assets: string[]; label: string; color: string; startDate: string; endDate: string }) {
   const [asset, setAsset] = useState(assetOptions[0] ?? '');
   const [data, setData] = useState<PivotRow[]>([]);
 
   useEffect(() => {
     if (!datasetId || !asset) return;
-    fetch(`${api}/pivot-data?dataset_id=${datasetId}&group_by=month&metric=avg&asset=${asset}`)
+    fetch(`${api}/pivot-data?dataset_id=${datasetId}&group_by=month&metric=avg&asset=${asset}&start_date=${startDate}&end_date=${endDate}`)
       .then((r) => r.json())
       .then(setData);
-  }, [datasetId, asset, api]);
+  }, [datasetId, asset, api, startDate, endDate]);
 
   // Normalise to 100 at start
   const indexed = (() => {
@@ -77,16 +77,16 @@ function ComparePanel({
 }
 
 export default function ComparisonsPage() {
-  const { selectedId, api } = useApp();
+  const { selectedId, api, dateRange } = useApp();
   const [allData, setAllData] = useState<PivotRow[]>([]);
   const [overlay, setOverlay] = useState(false);
 
   useEffect(() => {
     if (!selectedId) return;
-    fetch(`${api}/pivot-data?dataset_id=${selectedId}&group_by=month&metric=avg`)
+    fetch(`${api}/pivot-data?dataset_id=${selectedId}&group_by=month&metric=avg&start_date=${dateRange.start}&end_date=${dateRange.end}`)
       .then((r) => r.json())
       .then(setAllData);
-  }, [selectedId, api]);
+  }, [selectedId, api, dateRange]);
 
   const assets = [...new Set(allData.map((r) => r.asset))];
 
@@ -138,8 +138,8 @@ export default function ComparisonsPage() {
         </div>
       ) : (
         <div className="flex gap-4">
-          <ComparePanel api={api} datasetId={selectedId} assets={assets} label="Asset A" color="#6366f1" />
-          <ComparePanel api={api} datasetId={selectedId} assets={[...assets].reverse()} label="Asset B" color="#10b981" />
+          <ComparePanel api={api} datasetId={selectedId} assets={assets} label="Asset A" color="#6366f1" startDate={dateRange.start} endDate={dateRange.end} />
+          <ComparePanel api={api} datasetId={selectedId} assets={[...assets].reverse()} label="Asset B" color="#10b981" startDate={dateRange.start} endDate={dateRange.end} />
         </div>
       )}
     </div>

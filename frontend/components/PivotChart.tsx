@@ -61,7 +61,7 @@ export default function PivotChart({ data, metric }: Props) {
           <Tooltip
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
             labelStyle={{ color: '#f9fafb' }}
-            formatter={(v: number) => formatValue(v, metric)}
+            formatter={(v) => formatValue(Number(v), metric)}
           />
           <Legend wrapperStyle={{ color: '#d1d5db', fontSize: 13 }} />
           {assets.map((a) => (

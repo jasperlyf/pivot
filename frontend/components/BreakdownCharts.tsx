@@ -50,7 +50,7 @@ export function BreakdownBar({ data }: BreakdownProps) {
           <XAxis dataKey="asset" {...sharedAxis} />
           <YAxis {...sharedAxis} tickFormatter={fmt} width={60} />
           <Tooltip
-            formatter={(v: number) => [fmt(v), 'Avg price']}
+            formatter={(v) => [fmt(Number(v)), 'Avg price']}
             contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
           />
           <Bar dataKey="avg" radius={[6, 6, 0, 0]}>
@@ -87,7 +87,7 @@ export function BreakdownPie({ data }: BreakdownProps) {
             ))}
           </Pie>
           <Tooltip
-            formatter={(v: number) => [`${((v / total) * 100).toFixed(0)}% (${v} pts)`, '']}
+            formatter={(v) => [`${((Number(v) / total) * 100).toFixed(0)}% (${v} pts)`, '']}
             contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
           />
           <Legend

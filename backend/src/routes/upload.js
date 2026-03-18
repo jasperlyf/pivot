@@ -2,52 +2,53 @@ const express = require('express');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const xlsx = require('xlsx');
-const prisma = require('../lib/prisma');
+const { randomUUID } = require('crypto');
+const supabase = require('../lib/prisma');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 function parseRows(buffer, mimetype, originalname) {
   const ext = originalname.split('.').pop().toLowerCase();
-  let rows;
-
   if (ext === 'csv' || mimetype === 'text/csv') {
-    rows = parse(buffer.toString(), { columns: true, skip_empty_lines: true, trim: true });
-  } else {
-    const workbook = xlsx.read(buffer, { type: 'buffer' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    rows = xlsx.utils.sheet_to_json(sheet);
+    return parse(buffer.toString(), { columns: true, skip_empty_lines: true, trim: true });
   }
-  return rows;
+  const workbook = xlsx.read(buffer, { type: 'buffer' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  return xlsx.utils.sheet_to_json(sheet);
 }
 
 // POST /upload
 router.post('/', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
     const { datasetName } = req.body;
     if (!datasetName) return res.status(400).json({ error: 'datasetName is required' });
 
     const rows = parseRows(req.file.buffer, req.file.mimetype, req.file.originalname);
 
-    // Expect columns: date, asset_name, value, category
+    const datasetId = randomUUID();
+
+    const { data: dataset, error: dsError } = await supabase
+      .from('datasets')
+      .insert({ id: datasetId, name: datasetName })
+      .select()
+      .single();
+    if (dsError) throw dsError;
+
     const records = rows.map((row) => ({
-      date: new Date(row.date),
-      assetName: row.asset_name,
+      id: randomUUID(),
+      dataset_id: datasetId,
+      date: new Date(row.date).toISOString(),
+      asset_name: row.asset_name,
       value: parseFloat(row.value),
       category: row.category || 'uncategorized',
     }));
 
-    const dataset = await prisma.dataset.create({
-      data: {
-        name: datasetName,
-        records: { create: records },
-      },
-      include: { _count: { select: { records: true } } },
-    });
+    const { error: recError } = await supabase.from('records').insert(records);
+    if (recError) throw recError;
 
-    res.status(201).json(dataset);
+    res.status(201).json({ ...dataset, record_count: records.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

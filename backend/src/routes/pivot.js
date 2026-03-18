@@ -1,5 +1,5 @@
 const express = require('express');
-const prisma = require('../lib/prisma');
+const supabase = require('../lib/prisma');
 const { groupRecords } = require('../lib/pivotLogic');
 
 const router = express.Router();
@@ -12,16 +12,26 @@ router.get('/', async (req, res) => {
 
     if (!dataset_id) return res.status(400).json({ error: 'dataset_id is required' });
 
-    const where = { datasetId: dataset_id };
-    if (asset) where.assetName = asset;
-    if (category) where.category = category;
+    let query = supabase
+      .from('records')
+      .select('*')
+      .eq('dataset_id', dataset_id)
+      .order('date', { ascending: true });
 
-    const records = await prisma.record.findMany({
-      where,
-      orderBy: { date: 'asc' },
-    });
+    if (asset) query = query.eq('asset_name', asset);
+    if (category) query = query.eq('category', category);
 
-    const grouped = groupRecords(records, group_by, metric);
+    const { data: records, error } = await query;
+    if (error) throw error;
+
+    // Remap snake_case to camelCase for pivotLogic compatibility
+    const mapped = records.map(r => ({
+      ...r,
+      datasetId: r.dataset_id,
+      assetName: r.asset_name,
+    }));
+
+    const grouped = groupRecords(mapped, group_by, metric);
     res.json(grouped);
   } catch (err) {
     res.status(500).json({ error: err.message });

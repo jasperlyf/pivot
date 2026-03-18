@@ -1,8 +1,9 @@
 require('dotenv').config();
-const { PrismaClient } = require('@prisma/client');
+const { createClient } = require('@supabase/supabase-js');
 
-const prisma = new PrismaClient({
-  datasources: { db: { url: process.env.DATABASE_URL } },
-});
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-module.exports = prisma;
+module.exports = supabase;

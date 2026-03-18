@@ -4,11 +4,20 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/lib/context';
 import MainChart from '@/components/MainChart';
 
-interface PivotRow { date: string; asset: string; category: string; value: number; }
+interface HistoryRow { date: string; asset: string; name: string; category: string; value: number; }
 
-const GROUP_OPTIONS = [{ v: 'day', l: 'Day' }, { v: 'week', l: 'Week' }, { v: 'month', l: 'Month' }];
-const METRIC_OPTIONS = [{ v: 'avg', l: 'Average' }, { v: 'sum', l: 'Sum' }, { v: 'change', l: '% Change' }];
-const CATEGORY_OPTIONS = [{ v: '', l: 'All' }, { v: 'equity', l: 'Equity' }, { v: 'crypto', l: 'Crypto' }];
+const INTERVALS = [
+  { label: 'Daily',   value: '1d'  },
+  { label: 'Weekly',  value: '1wk' },
+  { label: 'Monthly', value: '1mo' },
+];
+
+const CATEGORIES = [
+  { label: 'All',       value: '' },
+  { label: 'Equity',    value: 'equity' },
+  { label: 'Crypto',    value: 'crypto' },
+  { label: 'Commodity', value: 'commodity' },
+];
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -19,78 +28,62 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 }
 
 export default function ExplorePage() {
-  const { selectedId, api, dateRange } = useApp();
-  const [groupBy, setGroupBy] = useState('month');
-  const [metric, setMetric] = useState('avg');
+  const { symbols, dateRange, api } = useApp();
+  const [interval, setIntervalVal] = useState('1mo');
   const [category, setCategory] = useState('');
   const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
-  const [allAssets, setAllAssets] = useState<string[]>([]);
-  const [data, setData] = useState<PivotRow[]>([]);
+  const [allData, setAllData] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch all assets on mount
   useEffect(() => {
-    if (!selectedId) return;
-    fetch(`${api}/pivot-data?dataset_id=${selectedId}&group_by=month&metric=avg&start_date=${dateRange.start}&end_date=${dateRange.end}`)
-      .then((r) => r.json())
-      .then((d: PivotRow[]) => {
-        const assets = [...new Set(d.map((r) => r.asset))];
-        setAllAssets(assets);
-        setSelectedAssets(assets);
-      });
-  }, [selectedId, api, dateRange]);
+    setSelectedAssets(symbols);
+  }, [symbols]);
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!symbols.length) return;
     setLoading(true);
-    const params = new URLSearchParams({ dataset_id: selectedId, group_by: groupBy, metric, start_date: dateRange.start, end_date: dateRange.end });
-    if (category) params.append('category', category);
-    fetch(`${api}/pivot-data?${params}`)
+    fetch(`${api}/market-data/history?symbols=${symbols.join(',')}&period=${dateRange.period}&interval=${interval}`)
       .then((r) => r.json())
-      .then((d: PivotRow[]) => {
-        setData(selectedAssets.length ? d.filter((r) => selectedAssets.includes(r.asset)) : d);
-        setLoading(false);
-      });
-  }, [selectedId, groupBy, metric, category, api, dateRange]);
+      .then((d) => { setAllData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [symbols, dateRange, interval, api]);
 
-  const filtered = selectedAssets.length ? data.filter((r) => selectedAssets.includes(r.asset)) : data;
+  const filtered = allData.filter((r) => {
+    if (selectedAssets.length && !selectedAssets.includes(r.asset)) return false;
+    if (category && r.category !== category) return false;
+    return true;
+  });
 
   const toggleAsset = (a: string) =>
     setSelectedAssets((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
 
+  const uniqueAssets = [...new Set(allData.map((r) => r.asset))];
+
   return (
     <div className="flex gap-6 h-full">
       {/* Left panel */}
-      <div className="w-56 shrink-0 space-y-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
+      <div className="w-52 shrink-0 space-y-5">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-5">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Group by</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Interval</p>
             <div className="flex flex-col gap-1.5">
-              {GROUP_OPTIONS.map(({ v, l }) => (
-                <Chip key={v} label={l} active={groupBy === v} onClick={() => setGroupBy(v)} />
-              ))}
-            </div>
-          </div>
-          <div className="border-t border-slate-100 pt-4">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Metric</p>
-            <div className="flex flex-col gap-1.5">
-              {METRIC_OPTIONS.map(({ v, l }) => (
-                <Chip key={v} label={l} active={metric === v} onClick={() => setMetric(v)} />
+              {INTERVALS.map(({ label, value }) => (
+                <Chip key={value} label={label} active={interval === value} onClick={() => setIntervalVal(value)} />
               ))}
             </div>
           </div>
           <div className="border-t border-slate-100 pt-4">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Category</p>
             <div className="flex flex-col gap-1.5">
-              {CATEGORY_OPTIONS.map(({ v, l }) => (
-                <Chip key={v} label={l} active={category === v} onClick={() => setCategory(v)} />
+              {CATEGORIES.map(({ label, value }) => (
+                <Chip key={value} label={label} active={category === value} onClick={() => setCategory(value)} />
               ))}
             </div>
           </div>
           <div className="border-t border-slate-100 pt-4">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Assets</p>
             <div className="flex flex-col gap-1.5">
-              {allAssets.map((a) => (
+              {uniqueAssets.map((a) => (
                 <Chip key={a} label={a} active={selectedAssets.includes(a)} onClick={() => toggleAsset(a)} />
               ))}
             </div>

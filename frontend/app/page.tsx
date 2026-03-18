@@ -7,96 +7,91 @@ import MainChart from '@/components/MainChart';
 import { BreakdownBar, BreakdownPie } from '@/components/BreakdownCharts';
 import DataTable from '@/components/DataTable';
 
-interface PivotRow { date: string; asset: string; category: string; value: number; }
+interface Quote {
+  symbol: string; name: string; category: string;
+  price: number; change: number; changePct: number; prevClose: number;
+}
+
+interface HistoryRow { date: string; asset: string; name: string; category: string; value: number; }
 
 export default function Dashboard() {
-  const { selectedId, api, dateRange } = useApp();
-  const [data, setData] = useState<PivotRow[]>([]);
+  const { symbols, dateRange, api } = useApp();
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!selectedId) return;
-    setLoading(true);
-    const params = new URLSearchParams({
-      dataset_id: selectedId, group_by: 'month', metric: 'avg',
-      start_date: dateRange.start, end_date: dateRange.end,
-    });
-    fetch(`${api}/pivot-data?${params}`)
+    if (!symbols.length) return;
+    const sym = symbols.join(',');
+    fetch(`${api}/market-data/quotes?symbols=${sym}`)
       .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); });
-  }, [selectedId, api, dateRange]);
+      .then(setQuotes)
+      .catch(() => {});
+  }, [symbols, api]);
 
-  // Compute KPIs from data
-  const assets = [...new Set(data.map((r) => r.asset))];
+  useEffect(() => {
+    if (!symbols.length) return;
+    setLoading(true);
+    const sym = symbols.join(',');
+    fetch(`${api}/market-data/history?symbols=${sym}&period=${dateRange.period}&interval=${dateRange.interval}`)
+      .then((r) => r.json())
+      .then((d) => { setHistory(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [symbols, dateRange, api]);
 
-  function latestValue(asset: string) {
-    const rows = data.filter((r) => r.asset === asset).sort((a, b) => b.date.localeCompare(a.date));
-    return rows[0]?.value ?? 0;
-  }
+  // KPI cards from live quotes — show top 4
+  const topQuotes = quotes.slice(0, 4);
 
-  function totalReturn(asset: string) {
-    const rows = data.filter((r) => r.asset === asset).sort((a, b) => a.date.localeCompare(b.date));
-    if (rows.length < 2) return 0;
-    return ((rows[rows.length - 1].value - rows[0].value) / rows[0].value) * 100;
-  }
+  const fmt = (price: number) =>
+    price >= 1000
+      ? `$${price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+      : `$${price.toFixed(2)}`;
 
-  const bestAsset = assets.reduce((best, a) => totalReturn(a) > totalReturn(best) ? a : best, assets[0] ?? '');
-  const worstAsset = assets.reduce((worst, a) => totalReturn(a) < totalReturn(worst) ? a : worst, assets[0] ?? '');
+  const colorMap = ['indigo', 'emerald', 'amber', 'rose'] as const;
 
-  const kpis = [
-    {
-      title: 'Best Performer',
-      value: bestAsset || '—',
-      change: bestAsset ? totalReturn(bestAsset) : undefined,
-      subtitle: dateRange.label,
-      color: 'emerald' as const,
-    },
-    {
-      title: 'S&P 500 (SPY)',
-      value: latestValue('SPY') ? `$${latestValue('SPY').toFixed(2)}` : '—',
-      change: totalReturn('SPY') || undefined,
-      subtitle: dateRange.label,
-      color: 'indigo' as const,
-    },
-    {
-      title: 'Bitcoin (BTC)',
-      value: latestValue('BTC') ? `$${latestValue('BTC').toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—',
-      change: totalReturn('BTC') || undefined,
-      subtitle: dateRange.label,
-      color: 'amber' as const,
-    },
-    {
-      title: 'Worst Performer',
-      value: worstAsset || '—',
-      change: worstAsset ? totalReturn(worstAsset) : undefined,
-      subtitle: dateRange.label,
-      color: 'rose' as const,
-    },
-  ];
-
-  if (loading) return (
+  if (loading && !history.length) return (
     <div className="flex items-center justify-center h-96 text-slate-400 text-sm">
-      Loading data…
+      Loading market data…
     </div>
   );
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k) => <KPICard key={k.title} {...k} />)}
-      </div>
+      {/* KPI Cards — live quotes */}
+      {topQuotes.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {topQuotes.map((q, i) => (
+            <KPICard
+              key={q.symbol}
+              title={q.name}
+              value={fmt(q.price)}
+              change={q.changePct}
+              subtitle="Today"
+              color={colorMap[i % 4]}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Main chart */}
-      <MainChart data={data} />
+      {loading ? (
+        <div className="bg-white rounded-xl border border-slate-200 flex items-center justify-center h-80 text-slate-400 text-sm shadow-sm">
+          Fetching {dateRange.label} data…
+        </div>
+      ) : (
+        <MainChart data={history} />
+      )}
 
-      {/* Breakdowns + Table */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <BreakdownBar data={data} />
-        <BreakdownPie data={data} />
-      </div>
-
-      <DataTable data={data} />
+      {/* Breakdowns */}
+      {history.length > 0 && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <BreakdownBar data={history} />
+            <BreakdownPie data={history} />
+          </div>
+          <DataTable data={history} />
+        </>
+      )}
     </div>
   );
 }

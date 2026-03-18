@@ -84,7 +84,7 @@ NEXT_PUBLIC_API_URL=https://pivot-api-74sf.onrender.com
 ## TODO — Still Needs Work
 
 ### High priority
-- [ ] **Date range filter** in top bar (currently no date filtering)
+- [x] **Date range filter** in top bar — preset pills (All time, 2021, 2022, 2023, 2024, Last 2 years)
 - [ ] **Confirm Vercel build passes** and live site loads data end-to-end
 - [ ] **Keep Render warm** — free tier spins down after 15min inactivity; add a ping service (e.g. UptimeRobot)
 

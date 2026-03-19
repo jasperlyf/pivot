@@ -32,7 +32,7 @@ export default function DataSourcesPage() {
     if (!token) return;
     fetch(`${api}/datasets`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
-      .then(setDatasets);
+      .then((data) => setDatasets(Array.isArray(data) ? data : []));
   };
 
   useEffect(() => { load(); }, []); // eslint-disable-line

@@ -2,15 +2,26 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Pin, Star, Search } from 'lucide-react';
+import { ArrowRight, Pin, Star, Search, ArrowUpDown } from 'lucide-react';
 import { TEMPLATES } from '@/lib/templates';
 import { useApp } from '@/lib/context';
 
+type SortKey = 'default' | 'az' | 'za' | 'pinned' | 'starred';
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'default',  label: 'Default' },
+  { value: 'az',       label: 'A → Z' },
+  { value: 'za',       label: 'Z → A' },
+  { value: 'pinned',   label: 'Pinned first' },
+  { value: 'starred',  label: 'Starred first' },
+];
+
 export default function TemplatesPage() {
   const { templatePinned, toggleTemplatePinned, templateFavourites, toggleTemplateFavourite } = useApp();
-  const [query, setQuery] = useState('');
+  const [query, setQuery]   = useState('');
+  const [sort, setSort]     = useState<SortKey>('default');
 
-  const filtered = query.trim()
+  const filtered = (query.trim()
     ? TEMPLATES.filter((t) => {
         const q = query.toLowerCase();
         return (
@@ -20,7 +31,22 @@ export default function TemplatesPage() {
           t.tags.some((tag) => tag.toLowerCase().includes(q))
         );
       })
-    : TEMPLATES;
+    : [...TEMPLATES]
+  ).sort((a, b) => {
+    if (sort === 'az') return a.label.localeCompare(b.label);
+    if (sort === 'za') return b.label.localeCompare(a.label);
+    if (sort === 'pinned') {
+      const ap = templatePinned.includes(a.label) ? 0 : 1;
+      const bp = templatePinned.includes(b.label) ? 0 : 1;
+      return ap - bp;
+    }
+    if (sort === 'starred') {
+      const as = templateFavourites.includes(a.label) ? 0 : templatePinned.includes(a.label) ? 1 : 2;
+      const bs = templateFavourites.includes(b.label) ? 0 : templatePinned.includes(b.label) ? 1 : 2;
+      return as - bs;
+    }
+    return 0; // default — preserve original order
+  });
 
   return (
     <div className="space-y-6">
@@ -32,14 +58,28 @@ export default function TemplatesPage() {
             Pre-built views for exploring, comparing, and analysing financial data
           </p>
         </div>
-        <div className="relative w-64">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search templates…"
-            className="w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative w-52">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search templates…"
+              className="w-full pl-8 pr-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="relative">
+            <ArrowUpDown size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="pl-8 pr-7 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none cursor-pointer"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

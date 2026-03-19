@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Settings,
-  TrendingUp, PanelLeftClose, PanelLeftOpen, LogOut, Layers, Upload,
-  PieChart, ChevronDown, FolderOpen, Star, LayoutTemplate,
-  Paperclip, MonitorPlay, X,
+  TrendingUp, PanelLeftClose, PanelLeftOpen, LogOut, Upload,
+  ChevronDown, FolderOpen, Star, LayoutTemplate, Layers, PieChart,
+  Paperclip, MonitorPlay, X, Pencil, FlaskConical, Library,
 } from 'lucide-react';
 import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
@@ -19,10 +19,16 @@ const topNav = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
 ];
 
-const toolsNav = [
-  { href: '/indexes',      label: 'Indexes',    icon: Layers },
-  { href: '/portfolios',   label: 'Portfolios', icon: PieChart },
-  { href: '/data-sources', label: 'Dataset',    icon: Upload },
+const indexNav = [
+  { href: '/index-builder',    label: 'Builder',   icon: Pencil },
+  { href: '/index-simulator',  label: 'Simulator', icon: FlaskConical },
+  { href: '/library/index',    label: 'Library',   icon: Library },
+];
+
+const portfolioNav = [
+  { href: '/portfolio',            label: 'Builder',   icon: Pencil },
+  { href: '/portfolio-simulator',  label: 'Simulator', icon: FlaskConical },
+  { href: '/library/portfolio',    label: 'Library',   icon: Library },
 ];
 
 const bottomNav = [
@@ -33,15 +39,18 @@ export default function Sidebar() {
   const path   = usePathname();
   const router = useRouter();
   const {
-    user, signOut, templatePinned, toggleTemplatePinned, templateFavourites, toggleTemplateFavourite,
+    user, signOut, templatePinned, templateFavourites, toggleTemplateFavourite,
     presentationMode, presentationWorkspaceId, presentationWorkspaceName,
     presentationTemplateHrefs, exitPresentation,
   } = useApp();
   const supabase = createClient();
 
   const [collapsed, setCollapsed]       = useState(false);
-  const templateActive                  = TEMPLATES.some((t) => path.startsWith(t.href));
+  const TEMPLATES_OWN_HREFS = ['/index-builder', '/index-simulator', '/library/index', '/portfolio', '/portfolio-simulator', '/library/portfolio'];
+  const templateActive = TEMPLATES.some((t) => path.startsWith(t.href) && !TEMPLATES_OWN_HREFS.some((h) => path.startsWith(h)));
   const [templateOpen, setTemplateOpen] = useState(templateActive);
+  const [indexOpen, setIndexOpen]       = useState(path.startsWith('/index') || path.startsWith('/library/index'));
+  const [portfolioOpen, setPortfolioOpen] = useState(path.startsWith('/portfolio') || path.startsWith('/library/portfolio'));
   const [wsOpen, setWsOpen]             = useState(false);
   const [workspaces, setWorkspaces]     = useState<WorkspaceItem[]>([]);
 
@@ -280,11 +289,71 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Tools nav */}
-        <div className="pt-0.5 space-y-0.5">
-          {toolsNav.map(({ href, label, icon }) => (
-            <NavLink key={href} href={href} label={label} icon={icon} />
-          ))}
+        {/* Indexes dropdown */}
+        <div className="pt-0.5">
+          {(() => {
+            const active = path.startsWith('/index') || path.startsWith('/library/index');
+            return (
+              <>
+                <button
+                  onClick={() => { if (collapsed) { router.push('/index-builder'); return; } setIndexOpen((v) => !v); }}
+                  title={collapsed ? 'Indexes' : undefined}
+                  className={`flex items-center gap-3 w-full px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''} ${active ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100'}`}
+                >
+                  <Layers size={15} strokeWidth={active ? 2.5 : 2} className="shrink-0" />
+                  {!collapsed && (<><span className="flex-1 text-left">Indexes</span><ChevronDown size={13} className={`transition-transform duration-200 ${indexOpen ? 'rotate-180' : ''}`} /></>)}
+                </button>
+                {indexOpen && !collapsed && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {indexNav.map(({ href, label, icon: Icon }) => {
+                      const isActive = path.startsWith(href);
+                      return (
+                        <Link key={href} href={href} className={`flex items-center gap-2 pl-8 pr-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${isActive ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100'}`}>
+                          <Icon size={12} className="shrink-0 opacity-60" />{label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Portfolios dropdown */}
+        <div className="pt-0.5">
+          {(() => {
+            const active = path.startsWith('/portfolio') || path.startsWith('/library/portfolio');
+            return (
+              <>
+                <button
+                  onClick={() => { if (collapsed) { router.push('/portfolio'); return; } setPortfolioOpen((v) => !v); }}
+                  title={collapsed ? 'Portfolios' : undefined}
+                  className={`flex items-center gap-3 w-full px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${collapsed ? 'justify-center' : ''} ${active ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100'}`}
+                >
+                  <PieChart size={15} strokeWidth={active ? 2.5 : 2} className="shrink-0" />
+                  {!collapsed && (<><span className="flex-1 text-left">Portfolios</span><ChevronDown size={13} className={`transition-transform duration-200 ${portfolioOpen ? 'rotate-180' : ''}`} /></>)}
+                </button>
+                {portfolioOpen && !collapsed && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {portfolioNav.map(({ href, label, icon: Icon }) => {
+                      const isActive = path.startsWith(href);
+                      return (
+                        <Link key={href} href={href} className={`flex items-center gap-2 pl-8 pr-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${isActive ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100'}`}>
+                          <Icon size={12} className="shrink-0 opacity-60" />{label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Dataset */}
+        <div className="pt-0.5">
+          <NavLink href="/data-sources" label="Dataset" icon={Upload} />
         </div>
 
         {/* Workspaces dropdown */}

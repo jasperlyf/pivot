@@ -1,4 +1,4 @@
-import { BarChart2, GitCompare, FileText, PieChart, Layers } from 'lucide-react';
+import { BarChart2, GitCompare, FileText, PieChart, Layers, RefreshCcw } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface TemplateDefinition {
@@ -62,5 +62,15 @@ export const TEMPLATES: TemplateDefinition[] = [
     iconBg: 'bg-orange-50 dark:bg-orange-950',
     iconColor: 'text-orange-600 dark:text-orange-400',
     tags: ['Documents', 'PDF'],
+  },
+  {
+    href: '/msci-rebalance',
+    label: 'MSCI Rebalance Analyzer',
+    description: 'Parse and compare MSCI index rebalances',
+    detail: 'Upload official MSCI rebalance announcement PDFs to extract additions and deletions per country. View geographic shift, search any security, and compare two rebalances side-by-side to spot recurring patterns.',
+    icon: RefreshCcw,
+    iconBg: 'bg-sky-50 dark:bg-sky-950',
+    iconColor: 'text-sky-600 dark:text-sky-400',
+    tags: ['MSCI', 'Index', 'Rebalance', 'Institutional'],
   },
 ];

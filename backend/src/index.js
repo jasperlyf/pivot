@@ -6,6 +6,7 @@ const datasetsRouter = require('./routes/datasets');
 const uploadRouter = require('./routes/upload');
 const pivotRouter = require('./routes/pivot');
 const marketDataRouter = require('./routes/marketData');
+const msciRouter = require('./routes/msci');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -20,6 +21,7 @@ app.use('/datasets', datasetsRouter);
 app.use('/dataset', datasetsRouter);
 app.use('/upload', uploadRouter);
 app.use('/pivot-data', pivotRouter);
+app.use('/msci', msciRouter);
 
 app.listen(PORT, () => {
   console.log(`Pivot API running on port ${PORT}`);

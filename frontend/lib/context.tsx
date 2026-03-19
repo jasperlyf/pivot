@@ -96,18 +96,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [templatePinned, setTemplatePinned] = useState<string[]>(['Watchlist', 'Comparison Tool']);
   const [templateFavourites, setTemplateFavourites] = useState<string[]>([]);
 
-  // Load localStorage after mount to avoid SSR/client hydration mismatch
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('templatePinned');
-      if (stored) setTemplatePinned(JSON.parse(stored));
-    } catch {}
-    try {
-      const stored = localStorage.getItem('templateFavourites');
-      if (stored) setTemplateFavourites(JSON.parse(stored));
-    } catch {}
-  }, []);
-
   // Presentation mode state
   const [presentationMode, setPresentationMode] = useState(false);
   const [presentationWorkspaceId, setPresentationWorkspaceId] = useState<string | null>(null);
@@ -128,18 +116,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPresentationTemplateHrefs([]);
   };
 
+  const saveTemplatePref = (pinned: string[], favs: string[]) => {
+    if (!user || !supabase.current) return;
+    supabase.current.from('user_settings').upsert({
+      user_id: user.id,
+      template_pinned: pinned,
+      template_favourites: favs,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+  };
+
   const toggleTemplatePinned = (label: string) => {
     setTemplatePinned((prev) => {
       const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
-      localStorage.setItem('templatePinned', JSON.stringify(next));
-      // If unpinning, also remove from favourites
+      let newFavs = templateFavourites;
       if (!next.includes(label)) {
-        setTemplateFavourites((fav) => {
-          const nf = fav.filter((l) => l !== label);
-          localStorage.setItem('templateFavourites', JSON.stringify(nf));
-          return nf;
-        });
+        newFavs = templateFavourites.filter((l) => l !== label);
+        setTemplateFavourites(newFavs);
       }
+      saveTemplatePref(next, newFavs);
       return next;
     });
   };
@@ -147,7 +142,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleTemplateFavourite = (label: string) => {
     setTemplateFavourites((prev) => {
       const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
-      localStorage.setItem('templateFavourites', JSON.stringify(next));
+      saveTemplatePref(templatePinned, next);
       return next;
     });
   };
@@ -184,7 +179,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     supabase.current
       .from('user_settings')
-      .select('currency, metric, group_by, theme')
+      .select('currency, metric, group_by, theme, template_pinned, template_favourites')
       .eq('user_id', user.id)
       .single()
       .then(({ data }) => {
@@ -195,6 +190,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             groupBy:  data.group_by ?? DEFAULT_SETTINGS.groupBy,
             theme:    data.theme    ?? DEFAULT_SETTINGS.theme,
           });
+          if (data.template_pinned?.length) setTemplatePinned(data.template_pinned);
+          if (data.template_favourites)     setTemplateFavourites(data.template_favourites);
         }
       });
   }, [user]); // eslint-disable-line
@@ -229,6 +226,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSymbolsState(DEFAULT_FAVOURITES);
     setSettingsState(DEFAULT_SETTINGS);
+    setTemplatePinned(['Watchlist', 'Comparison Tool']);
+    setTemplateFavourites([]);
   };
 
   return (

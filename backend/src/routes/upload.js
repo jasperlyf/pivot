@@ -15,7 +15,18 @@ const DATE_RE = /\b(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d
 
 async function parsePdfRows(buffer) {
   const data = await pdfParse(buffer);
-  const lines = data.text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const text = data.text;
+
+  // Detect MSCI rebalance PDFs and give actionable guidance
+  if (/MSCI\s+(WORLD|EM|ACWI|FRONTIER|EUROPE|USA|GLOBAL)/i.test(text) &&
+      /(addition|deletion|rebalance|index review)/i.test(text)) {
+    throw new Error(
+      'This looks like an MSCI rebalance PDF. Use the MSCI Rebalance Analyzer template to parse it — ' +
+      'it extracts additions, deletions, and country breakdowns automatically.'
+    );
+  }
+
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
   // Detect header row containing "date"
   let colNames = null;
@@ -98,6 +109,7 @@ async function parseRows(buffer, mimetype, originalname) {
 // POST /upload
 router.post('/', requireAuth, upload.single('file'), async (req, res) => {
   try {
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const { datasetName } = req.body;
     if (!datasetName) return res.status(400).json({ error: 'datasetName is required' });

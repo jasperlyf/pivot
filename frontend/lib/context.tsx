@@ -93,20 +93,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettingsState] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [globalDateRange, setGlobalDateRange] = useState<DateRange>(DATE_PRESETS[3]);
 
-  const [templatePinned, setTemplatePinned] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return ['Watchlist', 'Comparison Tool'];
+  const [templatePinned, setTemplatePinned] = useState<string[]>(['Watchlist', 'Comparison Tool']);
+  const [templateFavourites, setTemplateFavourites] = useState<string[]>([]);
+
+  // Load localStorage after mount to avoid SSR/client hydration mismatch
+  useEffect(() => {
     try {
       const stored = localStorage.getItem('templatePinned');
-      return stored ? JSON.parse(stored) : ['Watchlist', 'Comparison Tool'];
-    } catch { return ['Watchlist', 'Comparison Tool']; }
-  });
-
-  const [templateFavourites, setTemplateFavourites] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
+      if (stored) setTemplatePinned(JSON.parse(stored));
+    } catch {}
     try {
-      return JSON.parse(localStorage.getItem('templateFavourites') ?? '[]');
-    } catch { return []; }
-  });
+      const stored = localStorage.getItem('templateFavourites');
+      if (stored) setTemplateFavourites(JSON.parse(stored));
+    } catch {}
+  }, []);
 
   // Presentation mode state
   const [presentationMode, setPresentationMode] = useState(false);

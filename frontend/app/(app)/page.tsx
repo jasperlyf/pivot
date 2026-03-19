@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
 import {
-  FolderOpen, Eye, Paperclip, Plus, GitCompare,
-  ArrowRight, Star, BarChart2, Activity,
+  FolderOpen, Paperclip, Plus, GitCompare,
+  Star, BarChart2, Activity,
   Layers, PieChart, Upload,
 } from 'lucide-react';
 
@@ -20,7 +20,7 @@ interface WorkspaceSummary {
 
 interface ActivityItem {
   id: string;
-  type: 'workspace_created' | 'view_saved' | 'document_uploaded';
+  type: 'workspace_created' | 'document_uploaded';
   label: string;
   sub: string;
   href: string;
@@ -65,9 +65,7 @@ export default function Home() {
     const [
       { count: totalIndexes },
       { count: totalPortfolios },
-      { count: totalDatasets },
       wsWithCounts,
-      { data: recentViews },
       { data: recentDocs },
     ] = await Promise.all([
       supabase
@@ -78,27 +76,15 @@ export default function Home() {
         .from('portfolios')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user!.id),
-      supabase
-        .from('datasets')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user!.id),
       Promise.all(
         workspaces.map(async (w) => {
           const { count } = await supabase
-            .from('workspace_views')
+            .from('workspace_documents')
             .select('id', { count: 'exact', head: true })
             .eq('workspace_id', w.id);
           return { ...w, view_count: count ?? 0 };
         })
       ),
-      wsIds.length
-        ? supabase
-            .from('workspace_views')
-            .select('id, name, created_at, workspace_id')
-            .in('workspace_id', wsIds)
-            .order('created_at', { ascending: false })
-            .limit(15)
-        : Promise.resolve({ data: [] }),
       wsIds.length
         ? supabase
             .from('workspace_documents')
@@ -119,14 +105,6 @@ export default function Home() {
         href: `/workspace/${w.id}`,
         date: w.created_at,
       })),
-      ...(recentViews ?? []).map((v) => ({
-        id: `view-${v.id}`,
-        type: 'view_saved' as const,
-        label: `Saved view "${v.name}"`,
-        sub: wsMap[v.workspace_id] ?? '',
-        href: `/workspace/${v.workspace_id}`,
-        date: v.created_at,
-      })),
       ...(recentDocs ?? []).map((d) => ({
         id: `doc-${d.id}`,
         type: 'document_uploaded' as const,
@@ -139,7 +117,7 @@ export default function Home() {
      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
      .slice(0, 20);
 
-    setStats({ indexes: totalIndexes ?? 0, portfolios: totalPortfolios ?? 0, datasets: totalDatasets ?? 0 });
+    setStats({ indexes: totalIndexes ?? 0, portfolios: totalPortfolios ?? 0, datasets: 0 });
     setPinned(wsWithCounts.filter((w) => w.pinned));
     setActivity(items);
     setLoading(false);
@@ -172,9 +150,8 @@ export default function Home() {
   }
 
   const activityConfig = {
-    workspace_created:  { icon: FolderOpen, bg: 'bg-indigo-50 dark:bg-indigo-950',  color: 'text-indigo-500'  },
-    view_saved:         { icon: BarChart2,  bg: 'bg-emerald-50 dark:bg-emerald-950', color: 'text-emerald-500' },
-    document_uploaded:  { icon: Paperclip,  bg: 'bg-amber-50 dark:bg-amber-950',    color: 'text-amber-500'   },
+    workspace_created: { icon: FolderOpen, bg: 'bg-indigo-50 dark:bg-indigo-950', color: 'text-indigo-500' },
+    document_uploaded: { icon: Paperclip,  bg: 'bg-amber-50 dark:bg-amber-950',   color: 'text-amber-500'  },
   };
 
   return (
@@ -205,7 +182,7 @@ export default function Home() {
                   >
                     <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{w.name}</p>
                     <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500 mt-1">
-                      <span className="flex items-center gap-1"><Eye size={10} />{w.view_count} view{w.view_count !== 1 ? 's' : ''}</span>
+                      <span className="flex items-center gap-1"><Paperclip size={10} />{w.view_count} doc{w.view_count !== 1 ? 's' : ''}</span>
                     </div>
                   </button>
                   <div className="flex items-center justify-end px-3 py-1.5 border-t border-amber-100 dark:border-amber-900/30">

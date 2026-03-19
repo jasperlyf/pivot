@@ -85,7 +85,7 @@ export default function DataSourcesPage() {
     <div className="max-w-3xl space-y-6">
       <div>
         <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Data Sources</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Upload CSV or Excel files to analyze</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Upload CSV, Excel, or PDF files to analyze</p>
       </div>
 
       {/* Upload zone */}
@@ -111,8 +111,8 @@ export default function DataSourcesPage() {
           <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {uploading ? 'Uploading…' : 'Drop a file or click to browse'}
           </p>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">CSV or Excel (.xlsx) — date, asset_name, value, category columns</p>
-          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">CSV, Excel (.xlsx), or PDF — date, asset_name, value, category columns</p>
+          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) { if (!datasetName.trim()) setDatasetName(nameFromFile(f)); upload(f); }

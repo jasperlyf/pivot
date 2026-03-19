@@ -1,11 +1,11 @@
 const express = require('express');
-const { yfFetch, getAuth } = require('../lib/yahoo');
+const { yfFetch } = require('../lib/yahoo');
 
 const router = express.Router();
 
-// Simple in-memory cache — { key: { data, expiresAt } }
+// 5-minute in-memory cache
 const cache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
 function cached(key, fn) {
   const hit = cache.get(key);
@@ -32,7 +32,7 @@ const SYMBOL_META = {
 
 const DEFAULT_SYMBOLS = ['SPY', 'QQQ', 'ACWI', 'BTC-USD', 'ETH-USD', 'GLD'];
 
-function periodToDate(period) {
+function periodToUnix(period) {
   const n    = parseInt(period);
   const unit = period.slice(-1);
   const d    = new Date();
@@ -43,51 +43,64 @@ function periodToDate(period) {
   return Math.floor(d.getTime() / 1000);
 }
 
+// Fetch a single symbol's current quote from the chart meta
+async function fetchQuote(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+  const json = await yfFetch(url);
+  const meta = json?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error(`No data for ${symbol}`);
+
+  const price     = meta.regularMarketPrice ?? null;
+  const prevClose = meta.chartPreviousClose ?? null;
+  const change    = (price != null && prevClose != null) ? parseFloat((price - prevClose).toFixed(4)) : null;
+  const changePct = (change != null && prevClose) ? parseFloat(((change / prevClose) * 100).toFixed(2)) : null;
+
+  return {
+    symbol,
+    name:       SYMBOL_META[symbol]?.name ?? meta.shortName ?? meta.longName ?? symbol,
+    category:   SYMBOL_META[symbol]?.category ?? 'equity',
+    price,
+    change,
+    changePct,
+    prevClose,
+    open:       null, // not in chart meta
+    dayHigh:    meta.regularMarketDayHigh ?? null,
+    dayLow:     meta.regularMarketDayLow ?? null,
+    volume:     meta.regularMarketVolume ?? null,
+    avgVolume:  null,
+    marketCap:  null,
+    week52High: meta.fiftyTwoWeekHigh ?? null,
+    week52Low:  meta.fiftyTwoWeekLow ?? null,
+    expenseRatio: null,
+    currency:   meta.currency ?? 'USD',
+  };
+}
+
 // ── GET /market-data/quotes ────────────────────────────────────────────────────
 router.get('/quotes', async (req, res) => {
   try {
     const symbols = (req.query.symbols || DEFAULT_SYMBOLS.join(',')).split(',').map((s) => s.trim().toUpperCase());
 
-    const data = await cached(`quotes:${symbols.join(',')}`, () =>
-      yfFetch(`https://query1.finance.yahoo.com/v8/finance/quote?symbols=${symbols.join(',')}`)
-        .then((json) => {
-          const results = json?.quoteResponse?.result ?? [];
-          return symbols.map((symbol) => {
-            const q = results.find((r) => r.symbol === symbol);
-            if (!q) return {
-              symbol, name: SYMBOL_META[symbol]?.name ?? symbol,
-              category: SYMBOL_META[symbol]?.category ?? 'equity',
-              price: null, change: null, changePct: null, prevClose: null,
-              open: null, dayHigh: null, dayLow: null, volume: null,
-              avgVolume: null, marketCap: null, week52High: null, week52Low: null,
-              expenseRatio: null, currency: 'USD', error: 'No data',
-            };
-            return {
-              symbol,
-              name:        SYMBOL_META[symbol]?.name ?? q.shortName ?? symbol,
-              category:    SYMBOL_META[symbol]?.category ?? 'equity',
-              price:       q.regularMarketPrice ?? null,
-              change:      q.regularMarketChange != null ? parseFloat(q.regularMarketChange.toFixed(4)) : null,
-              changePct:   q.regularMarketChangePercent != null ? parseFloat((q.regularMarketChangePercent * 100).toFixed(2)) : null,
-              prevClose:   q.regularMarketPreviousClose ?? null,
-              open:        q.regularMarketOpen ?? null,
-              dayHigh:     q.regularMarketDayHigh ?? null,
-              dayLow:      q.regularMarketDayLow ?? null,
-              volume:      q.regularMarketVolume ?? null,
-              avgVolume:   q.averageDailyVolume3Month ?? null,
-              marketCap:   q.marketCap ?? null,
-              week52High:  q.fiftyTwoWeekHigh ?? null,
-              week52Low:   q.fiftyTwoWeekLow ?? null,
-              expenseRatio: null, // fetched separately if needed
-              currency:    q.currency ?? 'USD',
-            };
-          });
-        })
+    const results = await Promise.allSettled(
+      symbols.map((symbol) => cached(`quote:${symbol}`, () => fetchQuote(symbol)))
     );
 
-    res.json(data);
+    const rows = results.map((r, i) => {
+      const symbol = symbols[i];
+      if (r.status === 'fulfilled') return r.value;
+      return {
+        symbol, name: SYMBOL_META[symbol]?.name ?? symbol,
+        category: SYMBOL_META[symbol]?.category ?? 'equity',
+        price: null, change: null, changePct: null, prevClose: null,
+        open: null, dayHigh: null, dayLow: null, volume: null,
+        avgVolume: null, marketCap: null, week52High: null, week52Low: null,
+        expenseRatio: null, currency: 'USD',
+        error: r.reason?.message ?? 'Quote fetch failed',
+      };
+    });
+
+    res.json(rows);
   } catch (err) {
-    console.error('[quotes]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -98,7 +111,7 @@ router.get('/history', async (req, res) => {
     const symbols  = (req.query.symbols || DEFAULT_SYMBOLS.join(',')).split(',').map((s) => s.trim().toUpperCase());
     const period   = req.query.period   || '2y';
     const interval = req.query.interval || '1mo';
-    const period1  = periodToDate(period);
+    const period1  = periodToUnix(period);
     const period2  = Math.floor(Date.now() / 1000);
 
     const results = await Promise.all(
@@ -106,7 +119,7 @@ router.get('/history', async (req, res) => {
         cached(`history:${symbol}:${period}:${interval}`, () =>
           yfFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${interval}`)
             .then((json) => {
-              const result    = json?.chart?.result?.[0];
+              const result     = json?.chart?.result?.[0];
               if (!result) return [];
               const timestamps = result.timestamp ?? [];
               const closes     = result.indicators?.quote?.[0]?.close ?? [];
@@ -127,7 +140,6 @@ router.get('/history', async (req, res) => {
 
     res.json(results.flat());
   } catch (err) {
-    console.error('[history]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -147,7 +159,6 @@ router.get('/search', async (req, res) => {
     }));
     res.json(quotes);
   } catch (err) {
-    console.error('[search]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -157,27 +168,8 @@ router.get('/holdings', async (req, res) => {
   try {
     const symbol = (req.query.symbol || '').trim().toUpperCase();
     if (!symbol) return res.status(400).json({ error: 'symbol is required' });
-
-    const data = await cached(`holdings:${symbol}`, () =>
-      yfFetch(`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=topHoldings`)
-        .then((json) => {
-          const th = json?.quoteSummary?.result?.[0]?.topHoldings;
-          if (!th) return { symbol, holdings: [] };
-          return {
-            symbol,
-            holdings: (th.holdings ?? []).map((h) => ({
-              symbol: h.symbol,
-              name:   h.holdingName,
-              pct:    h.holdingPercent != null ? parseFloat((h.holdingPercent * 100).toFixed(2)) : null,
-            })),
-            equityPct: th.stockPosition != null ? parseFloat((th.stockPosition * 100).toFixed(2)) : null,
-            bondPct:   th.bondPosition  != null ? parseFloat((th.bondPosition  * 100).toFixed(2)) : null,
-            cashPct:   th.cashPosition  != null ? parseFloat((th.cashPosition  * 100).toFixed(2)) : null,
-          };
-        })
-    );
-
-    res.json(data);
+    // Holdings require auth — return empty gracefully
+    res.json({ symbol, holdings: [] });
   } catch (err) {
     res.json({ symbol: (req.query.symbol || '').toUpperCase(), holdings: [] });
   }
@@ -189,7 +181,7 @@ router.get('/stats', async (req, res) => {
     const symbols = (req.query.symbols || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
     if (!symbols.length) return res.status(400).json({ error: 'symbols required' });
 
-    const period1 = periodToDate('5y');
+    const period1 = periodToUnix('5y');
     const period2 = Math.floor(Date.now() / 1000);
 
     const fetchPrices = (symbol) =>
@@ -222,7 +214,7 @@ router.get('/stats', async (req, res) => {
       if (prices.length < 6) return { symbol, dataPoints: prices.length, periodsCovered: [] };
 
       const closes = prices.map((p) => p.close);
-      const periodsCovered = Object.entries(windows).filter(([, n]) => closes.length >= n).map(([label]) => label);
+      const periodsCovered = Object.entries(windows).filter(([, n]) => closes.length >= n).map(([l]) => l);
       const out = { symbol, dataPoints: closes.length, periodsCovered,
         annualisedReturn: {}, annualisedVolatility: {}, sharpeRatio: {},
         maxDrawdown: {}, beta: {}, calmarRatio: {} };
@@ -275,12 +267,8 @@ router.get('/stats', async (req, res) => {
 
     res.json(results);
   } catch (err) {
-    console.error('[stats]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
-// Pre-warm auth on module load so the first real request doesn't race
-getAuth().catch((e) => console.warn('[yahoo] Pre-warm failed:', e.message));
 
 module.exports = router;

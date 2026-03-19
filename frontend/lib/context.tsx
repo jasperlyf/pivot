@@ -117,7 +117,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const saveTemplatePref = (pinned: string[], favs: string[]) => {
-    if (!user || !supabase.current) return;
+    if (!user || !supabase.current) { console.warn('[saveTemplatePref] skipped — no user or supabase'); return; }
+    console.log('[saveTemplatePref] saving', { pinned, favs, userId: user.id });
     supabase.current.from('user_settings').upsert({
       user_id: user.id,
       currency: settings.currency,
@@ -127,7 +128,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       template_pinned: pinned,
       template_favourites: favs,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    }, { onConflict: 'user_id' }).then(({ error }) => {
+      if (error) console.error('[saveTemplatePref] error:', error);
+      else console.log('[saveTemplatePref] saved ok');
+    });
   };
 
   const toggleTemplatePinned = (label: string) => {
@@ -186,7 +190,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .select('currency, metric, group_by, theme, template_pinned, template_favourites')
       .eq('user_id', user.id)
       .single()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        console.log('[loadSettings] data:', data, 'error:', error);
         if (data) {
           setSettingsState({
             currency: data.currency ?? DEFAULT_SETTINGS.currency,

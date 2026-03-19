@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/browser';
 import {
   FolderOpen, Eye, Paperclip, Plus, GitCompare,
   ArrowRight, Star, BarChart2, Activity,
+  Layers, PieChart, Upload,
 } from 'lucide-react';
 
 interface WorkspaceSummary {
@@ -27,9 +28,9 @@ interface ActivityItem {
 }
 
 interface Stats {
-  workspaces: number;
-  views: number;
-  documents: number;
+  indexes: number;
+  portfolios: number;
+  datasets: number;
 }
 
 export default function Home() {
@@ -37,7 +38,7 @@ export default function Home() {
   const router = useRouter();
   const supabase = createClient();
 
-  const [stats, setStats]       = useState<Stats>({ workspaces: 0, views: 0, documents: 0 });
+  const [stats, setStats]       = useState<Stats>({ indexes: 0, portfolios: 0, datasets: 0 });
   const [pinned, setPinned]     = useState<WorkspaceSummary[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -62,18 +63,25 @@ export default function Home() {
     const wsMap = Object.fromEntries(workspaces.map((w) => [w.id, w.name]));
 
     const [
-      { count: totalViews },
-      { count: totalDocs },
+      { count: totalIndexes },
+      { count: totalPortfolios },
+      { count: totalDatasets },
       wsWithCounts,
       { data: recentViews },
       { data: recentDocs },
     ] = await Promise.all([
-      wsIds.length
-        ? supabase.from('workspace_views').select('id', { count: 'exact', head: true }).in('workspace_id', wsIds)
-        : Promise.resolve({ count: 0 }),
-      wsIds.length
-        ? supabase.from('workspace_documents').select('id', { count: 'exact', head: true }).in('workspace_id', wsIds)
-        : Promise.resolve({ count: 0 }),
+      supabase
+        .from('custom_indexes')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user!.id),
+      supabase
+        .from('portfolios')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user!.id),
+      supabase
+        .from('datasets')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user!.id),
       Promise.all(
         workspaces.map(async (w) => {
           const { count } = await supabase
@@ -131,7 +139,7 @@ export default function Home() {
      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
      .slice(0, 20);
 
-    setStats({ workspaces: workspaces.length, views: totalViews ?? 0, documents: totalDocs ?? 0 });
+    setStats({ indexes: totalIndexes ?? 0, portfolios: totalPortfolios ?? 0, datasets: totalDatasets ?? 0 });
     setPinned(wsWithCounts.filter((w) => w.pinned));
     setActivity(items);
     setLoading(false);
@@ -176,28 +184,6 @@ export default function Home() {
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Your financial workspace overview</p>
       </div>
 
-      {/* Overview stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Workspaces', value: stats.workspaces, icon: FolderOpen, color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-950' },
-          { label: 'Saved Views', value: stats.views,      icon: Eye,        color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950' },
-          { label: 'Documents',  value: stats.documents,   icon: Paperclip,  color: 'text-amber-500',  bg: 'bg-amber-50 dark:bg-amber-950' },
-        ].map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 flex items-center gap-4">
-            <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
-              <Icon size={16} className={color} />
-            </div>
-            <div>
-              {loading
-                ? <div className="h-5 w-8 bg-slate-100 dark:bg-slate-800 rounded animate-pulse mb-1" />
-                : <p className="text-xl font-bold text-slate-800 dark:text-slate-100 leading-none">{value}</p>
-              }
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Favourite Workspaces */}
       {(loading || pinned.length > 0) && (
         <div className="space-y-2">
@@ -236,6 +222,32 @@ export default function Home() {
           )}
         </div>
       )}
+
+      {/* Overview stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Saved Indexes',    value: stats.indexes,    icon: Layers,   color: 'text-indigo-500',  bg: 'bg-indigo-50 dark:bg-indigo-950', href: '/library/index' },
+          { label: 'Saved Portfolios', value: stats.portfolios, icon: PieChart, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-950', href: '/library/portfolio' },
+          { label: 'Total Datasets',   value: stats.datasets,   icon: Upload,   color: 'text-amber-500',   bg: 'bg-amber-50 dark:bg-amber-950', href: '/library/dataset' },
+        ].map(({ label, value, icon: Icon, color, bg, href }) => (
+          <button
+            key={label}
+            onClick={() => router.push(href)}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-4 flex items-center gap-4 text-left hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+          >
+            <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+              <Icon size={16} className={color} />
+            </div>
+            <div>
+              {loading
+                ? <div className="h-5 w-8 bg-slate-100 dark:bg-slate-800 rounded animate-pulse mb-1" />
+                : <p className="text-xl font-bold text-slate-800 dark:text-slate-100 leading-none">{value}</p>
+              }
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{label}</p>
+            </div>
+          </button>
+        ))}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Activity Log */}

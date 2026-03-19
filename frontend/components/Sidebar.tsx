@@ -4,42 +4,46 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, BarChart2, GitCompare, Settings,
+  LayoutDashboard, Settings,
   TrendingUp, PanelLeftClose, PanelLeftOpen, LogOut, Layers, Upload,
-  PieChart, Hammer, ChevronDown, FolderOpen, Star,
+  PieChart, ChevronDown, FolderOpen, Star, LayoutTemplate,
+  Paperclip, MonitorPlay, X,
 } from 'lucide-react';
 import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
+import { TEMPLATES } from '@/lib/templates';
 
 interface WorkspaceItem { id: string; name: string; pinned: boolean; }
 
 const topNav = [
-  { href: '/',            label: 'Home',    icon: LayoutDashboard },
-  { href: '/explore',     label: 'Explore', icon: BarChart2 },
-  { href: '/comparisons', label: 'Compare', icon: GitCompare },
+  { href: '/', label: 'Home', icon: LayoutDashboard },
 ];
 
-const builderNav = [
-  { href: '/index-builder', label: 'Custom Index',        icon: Layers },
-  { href: '/portfolio',     label: 'Portfolio Simulator', icon: PieChart },
+const toolsNav = [
+  { href: '/indexes',      label: 'Indexes',    icon: Layers },
+  { href: '/portfolios',   label: 'Portfolios', icon: PieChart },
+  { href: '/data-sources', label: 'Dataset',    icon: Upload },
 ];
 
 const bottomNav = [
-  { href: '/data-sources', label: 'Uploads',  icon: Upload },
-  { href: '/settings',     label: 'Settings', icon: Settings },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Sidebar() {
-  const path     = usePathname();
-  const router   = useRouter();
-  const { user, signOut } = useApp();
+  const path   = usePathname();
+  const router = useRouter();
+  const {
+    user, signOut, templatePinned, toggleTemplatePinned, templateFavourites, toggleTemplateFavourite,
+    presentationMode, presentationWorkspaceId, presentationWorkspaceName,
+    presentationTemplateHrefs, exitPresentation,
+  } = useApp();
   const supabase = createClient();
 
-  const [collapsed, setCollapsed]     = useState(false);
-  const builderActive                 = builderNav.some((item) => path.startsWith(item.href));
-  const [builderOpen, setBuilderOpen] = useState(builderActive);
-  const [wsOpen, setWsOpen]           = useState(false);
-  const [workspaces, setWorkspaces]   = useState<WorkspaceItem[]>([]);
+  const [collapsed, setCollapsed]       = useState(false);
+  const templateActive                  = TEMPLATES.some((t) => path.startsWith(t.href));
+  const [templateOpen, setTemplateOpen] = useState(templateActive);
+  const [wsOpen, setWsOpen]             = useState(false);
+  const [workspaces, setWorkspaces]     = useState<WorkspaceItem[]>([]);
 
   function fetchWorkspaces() {
     if (!user) { setWorkspaces([]); return; }
@@ -51,16 +55,9 @@ export default function Sidebar() {
       .then(({ data }) => setWorkspaces((data ?? []).sort((a, b) => Number(b.pinned) - Number(a.pinned))));
   }
 
-  // Fetch on user change
   useEffect(() => { fetchWorkspaces(); }, [user]); // eslint-disable-line
-
-  // Refetch on navigation so newly created workspaces appear immediately
   useEffect(() => { fetchWorkspaces(); }, [path]); // eslint-disable-line
-
-  // Auto-open workspace dropdown if currently on a workspace page
-  useEffect(() => {
-    if (path.startsWith('/workspace')) setWsOpen(true);
-  }, [path]);
+  useEffect(() => { if (path.startsWith('/workspace')) setWsOpen(true); }, [path]);
 
   const wsActive = path.startsWith('/workspace');
 
@@ -102,6 +99,81 @@ export default function Sidebar() {
     );
   }
 
+  // ── Presentation Mode Sidebar ────────────────────────────────────────────
+  if (presentationMode) {
+    const presentationTemplates = TEMPLATES.filter((t) => presentationTemplateHrefs.includes(t.href));
+
+    return (
+      <aside className="w-56 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0">
+        {/* Header */}
+        <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-800 shrink-0">
+          <div className="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center shrink-0">
+            <MonitorPlay size={12} className="text-white" strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-white truncate leading-tight">{presentationWorkspaceName}</p>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">Presenting</span>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+          {presentationTemplates.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-slate-500 italic">No templates selected</p>
+          ) : (
+            presentationTemplates.map(({ href, label, icon: Icon }) => {
+              const active = path.startsWith(href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Icon size={15} strokeWidth={active ? 2.5 : 2} className="shrink-0" />
+                  {label}
+                </Link>
+              );
+            })
+          )}
+
+          {/* Documents */}
+          {presentationWorkspaceId && (
+            <Link
+              href={`/workspace/${presentationWorkspaceId}`}
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                path === `/workspace/${presentationWorkspaceId}`
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <Paperclip size={15} strokeWidth={2} className="shrink-0" />
+              Documents
+            </Link>
+          )}
+        </nav>
+
+        {/* Exit presentation */}
+        <div className="p-2 border-t border-slate-800">
+          <button
+            onClick={() => {
+              exitPresentation();
+              if (presentationWorkspaceId) router.push(`/workspace/${presentationWorkspaceId}`);
+            }}
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-rose-400 transition-colors"
+          >
+            <X size={15} strokeWidth={2} className="shrink-0" />
+            Exit presentation
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
+  // ── Planning Mode Sidebar (default) ──────────────────────────────────────
   return (
     <aside className={`${collapsed ? 'w-14' : 'w-56'} bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 transition-all duration-200`}>
       {/* Header */}
@@ -124,39 +196,95 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {/* Top nav items */}
         {topNav.map(({ href, label, icon }) => (
           <NavLink key={href} href={href} label={label} icon={icon} />
         ))}
 
-        {/* Builder group */}
+        {/* Templates dropdown */}
         <div className="pt-0.5">
           <button
-            onClick={() => !collapsed && setBuilderOpen((v) => !v)}
-            title={collapsed ? 'Builder' : undefined}
+            onClick={() => {
+              if (collapsed) { router.push('/templates'); return; }
+              setTemplateOpen((v) => !v);
+            }}
+            title={collapsed ? 'Templates' : undefined}
             className={`flex items-center gap-3 w-full px-2.5 py-2 rounded-lg text-sm font-medium transition-colors ${
               collapsed ? 'justify-center' : ''
             } ${
-              builderActive
-                ? 'text-indigo-700 dark:text-indigo-300'
+              templateActive
+                ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100'
             }`}
           >
-            <Hammer size={15} strokeWidth={builderActive ? 2.5 : 2} className="shrink-0" />
+            <LayoutTemplate size={15} strokeWidth={templateActive ? 2.5 : 2} className="shrink-0" />
             {!collapsed && (
               <>
-                <span className="flex-1 text-left">Builder</span>
-                <ChevronDown size={13} className={`transition-transform duration-200 ${builderOpen ? 'rotate-180' : ''}`} />
+                <span className="flex-1 text-left">Templates</span>
+                <ChevronDown size={13} className={`transition-transform duration-200 ${templateOpen ? 'rotate-180' : ''}`} />
               </>
             )}
           </button>
-          {(builderOpen || collapsed) && (
-            <div className={`space-y-0.5 ${!collapsed ? 'mt-0.5' : ''}`}>
-              {builderNav.map(({ href, label, icon }) => (
-                <NavLink key={href} href={href} label={label} icon={icon} indent={!collapsed} />
+
+          {templateOpen && !collapsed && (
+            <div className="mt-0.5 space-y-0.5">
+              {[
+                ...TEMPLATES.filter((t) => templatePinned.includes(t.label) && templateFavourites.includes(t.label)),
+                ...TEMPLATES.filter((t) => templatePinned.includes(t.label) && !templateFavourites.includes(t.label)),
+              ].map(({ href, label, icon: Icon }) => {
+                const active = path.startsWith(href);
+                const isFav  = templateFavourites.includes(label);
+                return (
+                  <div key={label} className="flex items-center group">
+                    <Link
+                      href={href}
+                      className={`flex-1 flex items-center gap-2 pl-8 pr-2 py-1.5 rounded-lg text-xs font-medium transition-colors min-w-0 ${
+                        active
+                          ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+                          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100'
+                      }`}
+                    >
+                      <Icon size={12} className="shrink-0 opacity-60" />
+                      <span className="truncate">{label}</span>
+                    </Link>
+                    <button
+                      onClick={() => toggleTemplateFavourite(label)}
+                      title={isFav ? 'Remove from top' : 'Move to top'}
+                      className={`p-1 mr-0.5 rounded transition-all ${
+                        isFav
+                          ? 'text-amber-400 opacity-100'
+                          : 'text-slate-200 dark:text-slate-700 hover:text-amber-400 opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      <Star size={11} className={isFav ? 'fill-amber-400' : ''} />
+                    </button>
+                  </div>
+                );
+              })}
+              {templatePinned.length === 0 && (
+                <p className="pl-8 pr-2.5 py-1.5 text-xs text-slate-400 dark:text-slate-600 italic">No pinned templates</p>
+              )}
+              <Link
+                href="/templates"
+                className="flex items-center gap-2.5 pl-8 pr-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                View all templates →
+              </Link>
+            </div>
+          )}
+          {collapsed && (
+            <div className="space-y-0.5">
+              {TEMPLATES.filter((t) => templatePinned.includes(t.label)).map(({ href, label, icon }) => (
+                <NavLink key={label} href={href} label={label} icon={icon} />
               ))}
             </div>
           )}
+        </div>
+
+        {/* Tools nav */}
+        <div className="pt-0.5 space-y-0.5">
+          {toolsNav.map(({ href, label, icon }) => (
+            <NavLink key={href} href={href} label={label} icon={icon} />
+          ))}
         </div>
 
         {/* Workspaces dropdown */}
@@ -224,8 +352,6 @@ export default function Sidebar() {
                   );
                 })
               )}
-
-              {/* View all — bottom of list */}
               <Link
                 href="/workspace"
                 className="flex items-center gap-2.5 pl-8 pr-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"

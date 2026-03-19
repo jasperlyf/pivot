@@ -1,13 +1,11 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { useApp, DATE_PRESETS, DateRange } from '@/lib/context';
+import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
-import { Search, X, RotateCcw, Plus, Trash2 } from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart as RechartsPie, Pie, Cell,
-} from 'recharts';
+import { Search, X, RotateCcw, Plus } from 'lucide-react';
+import { PieChart as RechartsPie, Pie, Cell, Tooltip } from 'recharts';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
@@ -20,55 +18,9 @@ const PRESETS: { label: string; holdings: { symbol: string; weight: number }[] }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Holding { symbol: string; weight: number; }
-interface HistoryPoint { date: string; value: number; }
-interface SavedPortfolio { id: string; name: string; holdings: Holding[]; updatedAt: string; }
 interface QuoteData {
   symbol: string; name: string; price: number | null; change: number | null;
   changePct: number | null; marketCap: number | null; volume: number | null; currency: string;
-}
-
-// ── Metrics ───────────────────────────────────────────────────────────────────
-function computeMetrics(series: HistoryPoint[]) {
-  if (series.length < 2) return null;
-  const first = series[0].value;
-  const last  = series[series.length - 1].value;
-  const totalReturn = parseFloat(((last / first - 1) * 100).toFixed(2));
-  const days  = (new Date(series[series.length - 1].date).getTime() - new Date(series[0].date).getTime()) / 86400000;
-  const years = days / 365.25;
-  const cagr  = years > 0.1 ? parseFloat(((Math.pow(last / first, 1 / years) - 1) * 100).toFixed(2)) : null;
-  const rets  = series.slice(1).map((p, i) => (p.value - series[i].value) / series[i].value);
-  const mean  = rets.reduce((a, b) => a + b, 0) / rets.length;
-  const vol   = parseFloat((Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / rets.length * (rets.length / Math.max(years, 0.1))) * 100).toFixed(2));
-  let peak = first, maxDD = 0;
-  for (const p of series) {
-    if (p.value > peak) peak = p.value;
-    const dd = (p.value - peak) / peak;
-    if (dd < maxDD) maxDD = dd;
-  }
-  return { totalReturn, cagr, vol, maxDD: parseFloat((maxDD * 100).toFixed(2)) };
-}
-
-// ── Portfolio series computation ──────────────────────────────────────────────
-function buildPortfolioSeries(holdings: Holding[], historyMap: Record<string, HistoryPoint[]>): HistoryPoint[] {
-  const filled = holdings.filter((h) => historyMap[h.symbol]?.length > 0);
-  if (!filled.length) return [];
-  const dateSets = filled.map((h) => new Set(historyMap[h.symbol].map((p) => p.date)));
-  const commonDates = [...dateSets[0]].filter((d) => dateSets.every((s) => s.has(d))).sort();
-  if (commonDates.length < 2) return [];
-  const totalWeight = filled.reduce((s, h) => s + h.weight, 0);
-  if (totalWeight === 0) return [];
-  const normalized: Record<string, Record<string, number>> = {};
-  for (const h of filled) {
-    const pts = historyMap[h.symbol];
-    const base = pts.find((p) => p.date === commonDates[0])?.value ?? null;
-    if (!base) continue;
-    normalized[h.symbol] = {};
-    for (const p of pts) normalized[h.symbol][p.date] = (p.value / base) * 100;
-  }
-  return commonDates.map((date) => ({
-    date,
-    value: parseFloat(filled.reduce((sum, h) => sum + (h.weight / totalWeight) * (normalized[h.symbol]?.[date] ?? 100), 0).toFixed(4)),
-  }));
 }
 
 // ── Search dropdown ────────────────────────────────────────────────────────────
@@ -149,65 +101,37 @@ function AssetSearch({ api, onSelect }: { api: string; onSelect: (symbol: string
 export default function PortfolioPage() {
   const { api, user } = useApp();
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const requestedId = searchParams.get('id');
 
-  // Multi-portfolio state
-  const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([]);
-  const [currentId, setCurrentId]             = useState<string | null>(null);
-  const [portfolioName, setPortfolioName]     = useState('');
-  const [saving, setSaving]                   = useState(false);
-  const [saved, setSaved]                     = useState(false);
-  const [saveError, setSaveError]             = useState('');
+  const [currentId, setCurrentId]         = useState<string | null>(null);
+  const [portfolioName, setPortfolioName] = useState('');
+  const [saving, setSaving]               = useState(false);
+  const [saved, setSaved]                 = useState(false);
+  const [saveError, setSaveError]         = useState('');
 
-  const [holdings, setHoldings]     = useState<Holding[]>([]);
-  const [dateRange, setDateRange]   = useState<DateRange>(DATE_PRESETS[3]);
-  const [historyMap, setHistoryMap] = useState<Record<string, HistoryPoint[]>>({});
-  const [loading, setLoading]       = useState(false);
-  const [quotes, setQuotes]         = useState<Record<string, QuoteData>>({});
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [quotes, setQuotes]     = useState<Record<string, QuoteData>>({});
 
-  // Load all saved portfolios on mount, auto-load most recent
+  // Load a specific portfolio if navigated from library with ?id=
   useEffect(() => {
-    if (!user) return;
+    if (!user || !requestedId) return;
     supabase
       .from('portfolios')
-      .select('id, name, updated_at, portfolio_assets(asset_symbol, weight)')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false })
+      .select('id, name, portfolio_assets(asset_symbol, weight)')
+      .eq('id', requestedId)
+      .single()
       .then(({ data }) => {
-        if (data && data.length > 0) {
-          const mapped = data.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            updatedAt: p.updated_at,
-            holdings: (p.portfolio_assets as any[]).map((h: any) => ({ symbol: h.asset_symbol, weight: h.weight })),
-          }));
-          setSavedPortfolios(mapped);
-          // Auto-load most recent
-          setCurrentId(mapped[0].id);
-          setPortfolioName(mapped[0].name);
-          setHoldings(mapped[0].holdings);
+        if (data) {
+          setCurrentId(data.id);
+          setPortfolioName(data.name);
+          setHoldings((data.portfolio_assets as any[]).map((h: any) => ({ symbol: h.asset_symbol, weight: h.weight })));
         }
       });
-  }, [user]); // eslint-disable-line
-
-  // Fetch history when symbols or date range change
-  const symKey = holdings.map((h) => h.symbol).sort().join(',');
-  const fetchHistory = useCallback(async () => {
-    const symbols = holdings.map((h) => h.symbol).filter(Boolean);
-    if (!symbols.length) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`${api}/market-data/history?symbols=${symbols.join(',')}&period=${dateRange.period}&interval=${dateRange.interval}`);
-      const rows: { date: string; asset: string; value: number }[] = await res.json();
-      const map: Record<string, HistoryPoint[]> = {};
-      for (const r of rows) { if (!map[r.asset]) map[r.asset] = []; map[r.asset].push({ date: r.date, value: r.value }); }
-      for (const k of Object.keys(map)) map[k].sort((a, b) => a.date.localeCompare(b.date));
-      setHistoryMap(map);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, [symKey, dateRange, api]); // eslint-disable-line
-
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  }, [user, requestedId]); // eslint-disable-line
 
   // Fetch quotes for all holdings
+  const symKey = holdings.map((h) => h.symbol).sort().join(',');
   useEffect(() => {
     const symbols = holdings.map((h) => h.symbol);
     if (!symbols.length) { setQuotes({}); return; }
@@ -222,10 +146,8 @@ export default function PortfolioPage() {
   }, [symKey, api]); // eslint-disable-line
 
   // Derived
-  const totalWeight     = holdings.reduce((s, h) => s + h.weight, 0);
-  const weightOk        = totalWeight === 100;
-  const portfolioSeries = weightOk ? buildPortfolioSeries(holdings, historyMap) : [];
-  const metrics         = weightOk && portfolioSeries.length > 1 ? computeMetrics(portfolioSeries) : null;
+  const totalWeight = holdings.reduce((s, h) => s + h.weight, 0);
+  const weightOk    = totalWeight === 100;
 
   // Weighted portfolio day change (using actual weights, not normalised)
   const weightedDayChange = (() => {
@@ -280,15 +202,8 @@ export default function PortfolioPage() {
     });
   };
 
-  const applyPreset = (preset: typeof PRESETS[0]) => { setHoldings(preset.holdings); setHistoryMap({}); };
+  const applyPreset = (preset: typeof PRESETS[0]) => { setHoldings(preset.holdings); };
   const newPortfolio = () => { setCurrentId(null); setPortfolioName(''); setHoldings([]); };
-  const loadPortfolio = (p: SavedPortfolio) => { setCurrentId(p.id); setPortfolioName(p.name); setHoldings(p.holdings); };
-
-  const deletePortfolio = async (id: string) => {
-    await supabase.from('portfolios').delete().eq('id', id);
-    setSavedPortfolios((prev) => prev.filter((p) => p.id !== id));
-    if (currentId === id) { setCurrentId(null); setPortfolioName(''); setHoldings([]); }
-  };
 
   const savePortfolio = async () => {
     if (!user || !portfolioName.trim()) return;
@@ -316,11 +231,6 @@ export default function PortfolioPage() {
         holdings.map((h) => ({ portfolio_id: portfolioId!, asset_symbol: h.symbol, weight: h.weight }))
       );
     }
-    setSavedPortfolios((prev) => {
-      const entry = { id: portfolioId!, name: portfolioName.trim(), holdings, updatedAt: new Date().toISOString() };
-      const exists = prev.find((p) => p.id === portfolioId);
-      return exists ? prev.map((p) => p.id === portfolioId ? entry : p) : [entry, ...prev];
-    });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -338,68 +248,10 @@ export default function PortfolioPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Portfolio Simulator</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">A portfolio strategy simulation tool for decision-making</p>
-        </div>
-        <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1">
-          {DATE_PRESETS.map((p) => (
-            <button
-              key={p.label}
-              onClick={() => setDateRange(p)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                dateRange.label === p.label
-                  ? 'bg-indigo-600 text-white shadow-sm dark:shadow-none'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      <div>
+        <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Portfolio Builder</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">A portfolio strategy simulation tool for decision-making</p>
       </div>
-
-      {/* Saved portfolios panel */}
-      {user && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Saved Portfolios</p>
-            <button onClick={newPortfolio} className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-medium hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">
-              <Plus size={11} /> New
-            </button>
-          </div>
-          {savedPortfolios.length === 0 ? (
-            <p className="px-5 py-4 text-xs text-slate-400 dark:text-slate-500">No saved portfolios yet. Build one below and save it.</p>
-          ) : (
-            <ul className="divide-y divide-slate-50 dark:divide-slate-800">
-              {savedPortfolios.map((p) => (
-                <li key={p.id} className={`flex items-center justify-between px-5 py-3 ${currentId === p.id ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''}`}>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{p.name}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">
-                      {p.holdings.map((h) => `${h.symbol} ${h.weight}%`).join(' · ')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-3 shrink-0">
-                    <button onClick={() => loadPortfolio(p)} disabled={currentId === p.id}
-                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                        currentId === p.id
-                          ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 cursor-default'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950 hover:text-indigo-600'
-                      }`}>
-                      {currentId === p.id ? 'Editing' : 'Load'}
-                    </button>
-                    <button onClick={() => deletePortfolio(p.id)} className="text-slate-300 dark:text-slate-600 hover:text-rose-500 transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
 
       {/* Preset pills */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -415,7 +267,7 @@ export default function PortfolioPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Holdings panel */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-5 space-y-4">
           <div className="flex items-center justify-between">
@@ -532,67 +384,7 @@ export default function PortfolioPage() {
           )}
         </div>
 
-        {/* Metrics 2x2 */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-5">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Metrics</h2>
-          {metrics ? (
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: 'Today', value: weightedDayChange == null ? '—' : `${weightedDayChange >= 0 ? '+' : ''}${weightedDayChange.toFixed(2)}%`, cls: weightedDayChange == null ? 'text-slate-400' : weightedDayChange >= 0 ? 'text-emerald-600' : 'text-rose-600' },
-                { label: 'Total Return', value: `${metrics.totalReturn >= 0 ? '+' : ''}${metrics.totalReturn}%`, cls: metrics.totalReturn >= 0 ? 'text-emerald-600' : 'text-rose-600' },
-                { label: 'CAGR', value: metrics.cagr == null ? '—' : `${metrics.cagr >= 0 ? '+' : ''}${metrics.cagr}%`, cls: metrics.cagr == null ? 'text-slate-400' : metrics.cagr >= 0 ? 'text-emerald-600' : 'text-rose-600' },
-                { label: 'Volatility', value: `${metrics.vol}%`, cls: 'text-slate-800 dark:text-slate-200' },
-                { label: 'Max Drawdown', value: `${metrics.maxDD}%`, cls: 'text-rose-600' },
-              ].map(({ label, value, cls }) => (
-                <div key={label} className="bg-slate-50 dark:bg-slate-950 rounded-lg p-3 border border-slate-100 dark:border-slate-800">
-                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{label}</p>
-                  <p className={`text-xl font-bold tabular-nums ${cls}`}>{value}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-4 gap-2">
-              <div className="space-y-2 w-full">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="h-14 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800 animate-pulse" />
-                ))}
-              </div>
-              {!weightOk && holdings.length > 0 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Set weights to 100% to see metrics</p>
-              )}
-            </div>
-          )}
-        </div>
       </div>
-
-      {/* Performance chart */}
-      {weightOk && portfolioSeries.length > 1 && (
-        <div className={`bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-5 transition-opacity duration-300 ${loading ? 'opacity-40' : 'opacity-100'}`}>
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Performance</h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Indexed to 100 at start of period</p>
-            </div>
-            {metrics && (
-              <span className={`text-sm font-bold tabular-nums ${metrics.totalReturn >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {metrics.totalReturn >= 0 ? '+' : ''}{metrics.totalReturn}% total return
-              </span>
-            )}
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={portfolioSeries} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} width={45} domain={['auto', 'auto']} />
-              <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
-                formatter={(v) => [typeof v === 'number' ? v.toFixed(2) : v, 'Portfolio']}
-              />
-              <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2.5} dot={false} animationDuration={400} animationEasing="ease-out" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
 
       {/* Holdings summary table */}
       {holdings.length > 0 && Object.keys(quotes).length > 0 && (

@@ -4,6 +4,7 @@ const { parse } = require('csv-parse/sync');
 const xlsx = require('xlsx');
 const { randomUUID } = require('crypto');
 const supabase = require('../lib/prisma');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -19,19 +20,18 @@ function parseRows(buffer, mimetype, originalname) {
 }
 
 // POST /upload
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const { datasetName } = req.body;
     if (!datasetName) return res.status(400).json({ error: 'datasetName is required' });
 
     const rows = parseRows(req.file.buffer, req.file.mimetype, req.file.originalname);
-
     const datasetId = randomUUID();
 
     const { data: dataset, error: dsError } = await supabase
       .from('datasets')
-      .insert({ id: datasetId, name: datasetName })
+      .insert({ id: datasetId, name: datasetName, user_id: req.userId })
       .select()
       .single();
     if (dsError) throw dsError;
@@ -54,7 +54,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   }
 });
 
-// POST /upload/preview — parse without saving
+// POST /upload/preview — parse without saving (no auth needed)
 router.post('/preview', upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });

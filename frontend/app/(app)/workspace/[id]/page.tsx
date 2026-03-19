@@ -2,22 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Eye, FileText, Paperclip, Pencil, Check, X, Trash2, ChevronDown, ChevronUp, Upload, ExternalLink } from 'lucide-react';
-import ComparisonChartView from '@/components/ComparisonChartView';
+import { ArrowLeft, LayoutTemplate, FileText, Paperclip, Pencil, Check, X, Trash2, Upload, ExternalLink, ListTodo, Plus, MonitorPlay, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/browser';
 import { useApp } from '@/lib/context';
+import { TEMPLATES } from '@/lib/templates';
 
-type Tab = 'views' | 'notes' | 'documents';
+type Tab = 'templates' | 'documents' | 'tasks' | 'notes';
+const DEFAULT_TAB_ORDER: Tab[] = ['templates', 'documents', 'tasks', 'notes'];
 
-interface WorkspaceView {
+interface WorkspaceTask {
   id: string;
-  name: string;
-  config: {
-    symbols?: string[];
-    period?: string;
-    interval?: string;
-    mode?: string;
-  };
+  content: string;
+  completed: boolean;
   created_at: string;
 }
 
@@ -36,32 +32,56 @@ interface Workspace {
 
 export default function WorkspaceDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useApp();
+  const { user, presentationMode, presentationWorkspaceId, enterPresentation, exitPresentation } = useApp();
   const router = useRouter();
   const supabase = createClient();
+  const isPresenting = presentationMode && presentationWorkspaceId === id;
 
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [tab, setTab] = useState<Tab>('views');
-  const [views, setViews] = useState<WorkspaceView[]>([]);
+  const [workspace,  setWorkspace]  = useState<Workspace | null>(null);
+  const [tab,        setTab]        = useState<Tab>('templates');
+  const [tabOrder,   setTabOrder]   = useState<Tab[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_TAB_ORDER;
+    try {
+      const saved = localStorage.getItem(`tabOrder:${id}`);
+      if (saved) return JSON.parse(saved) as Tab[];
+    } catch {}
+    return DEFAULT_TAB_ORDER;
+  });
+  const dragTab = useRef<Tab | null>(null);
+
+  // Tasks
+  const [tasks, setTasks] = useState<WorkspaceTask[]>([]);
+  const [newTaskText, setNewTaskText] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+  const taskInputRef = useRef<HTMLInputElement>(null);
+
+  // Templates
+  const [selectedTemplates,  setSelectedTemplates]  = useState<string[]>([]);
+  const [templateQuery,      setTemplateQuery]       = useState('');
+
+  // Notes
   const [notes, setNotes] = useState('');
   const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
+
+  // Documents
   const [docs, setDocs] = useState<WorkspaceDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [renamingWorkspace, setRenamingWorkspace] = useState(false);
-  const [renameDraft, setRenameDraft] = useState('');
-  const [expandedView, setExpandedView] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [renamingWorkspace, setRenamingWorkspace] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
 
-    const [{ data: ws }, { data: vws }, { data: nt }, { data: dc }] = await Promise.all([
+    const [{ data: ws }, { data: tk }, { data: tpl }, { data: nt }, { data: dc }] = await Promise.all([
       supabase.from('workspaces').select('id, name, updated_at').eq('id', id).single(),
-      supabase.from('workspace_views').select('*').eq('workspace_id', id).order('created_at', { ascending: false }),
+      supabase.from('workspace_tasks').select('*').eq('workspace_id', id).order('created_at', { ascending: true }),
+      supabase.from('workspace_template_selections').select('hrefs').eq('workspace_id', id).single(),
       supabase.from('workspace_notes').select('content').eq('workspace_id', id).single(),
       supabase.from('workspace_documents').select('*').eq('workspace_id', id).order('created_at', { ascending: false }),
     ]);
@@ -69,13 +89,63 @@ export default function WorkspaceDetailPage() {
     if (!ws) { router.push('/workspace'); return; }
 
     setWorkspace(ws);
-    setViews(vws ?? []);
+    setTasks(tk ?? []);
+    setSelectedTemplates(tpl?.hrefs ?? TEMPLATES.map((t) => t.href));
     setNotes(nt?.content ?? '');
     setDocs(dc ?? []);
     setLoading(false);
   }, [id, user]); // eslint-disable-line
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Tasks ────────────────────────────────────────────────────────────────
+
+  async function addTask() {
+    const content = newTaskText.trim();
+    if (!content) return;
+    setAddingTask(true);
+    const { data } = await supabase
+      .from('workspace_tasks')
+      .insert({ workspace_id: id, content, completed: false })
+      .select()
+      .single();
+    if (data) setTasks((t) => [...t, data]);
+    setNewTaskText('');
+    setAddingTask(false);
+    taskInputRef.current?.focus();
+  }
+
+  async function toggleTask(taskId: string, completed: boolean) {
+    setTasks((t) => t.map((x) => x.id === taskId ? { ...x, completed } : x));
+    await supabase.from('workspace_tasks').update({ completed }).eq('id', taskId);
+  }
+
+  async function deleteTask(taskId: string) {
+    setTasks((t) => t.filter((x) => x.id !== taskId));
+    await supabase.from('workspace_tasks').delete().eq('id', taskId);
+  }
+
+  // ── Templates ────────────────────────────────────────────────────────────
+
+  async function toggleTemplate(href: string) {
+    const next = selectedTemplates.includes(href)
+      ? selectedTemplates.filter((h) => h !== href)
+      : [...selectedTemplates, href];
+    setSelectedTemplates(next);
+    // Upsert into DB
+    const { data: existing } = await supabase
+      .from('workspace_template_selections')
+      .select('workspace_id')
+      .eq('workspace_id', id)
+      .single();
+    if (existing) {
+      await supabase.from('workspace_template_selections').update({ hrefs: next }).eq('workspace_id', id);
+    } else {
+      await supabase.from('workspace_template_selections').insert({ workspace_id: id, hrefs: next });
+    }
+  }
+
+  // ── Notes ────────────────────────────────────────────────────────────────
 
   async function saveNotes() {
     if (!notesDirty) return;
@@ -92,34 +162,14 @@ export default function WorkspaceDetailPage() {
         .update({ content: notes, updated_at: new Date().toISOString() })
         .eq('workspace_id', id);
     } else {
-      await supabase
-        .from('workspace_notes')
-        .insert({ workspace_id: id, content: notes });
+      await supabase.from('workspace_notes').insert({ workspace_id: id, content: notes });
     }
-
-    await supabase
-      .from('workspaces')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', id);
-
+    await supabase.from('workspaces').update({ updated_at: new Date().toISOString() }).eq('id', id);
     setNotesDirty(false);
     setNotesSaving(false);
   }
 
-  async function deleteView(viewId: string) {
-    await supabase.from('workspace_views').delete().eq('id', viewId);
-    setViews((v) => v.filter((x) => x.id !== viewId));
-  }
-
-  async function renameWorkspace() {
-    if (!renameDraft.trim()) return;
-    await supabase
-      .from('workspaces')
-      .update({ name: renameDraft.trim(), updated_at: new Date().toISOString() })
-      .eq('id', id);
-    setWorkspace((w) => w ? { ...w, name: renameDraft.trim() } : w);
-    setRenamingWorkspace(false);
-  }
+  // ── Documents ────────────────────────────────────────────────────────────
 
   async function uploadDocument(file: File) {
     if (!user) return;
@@ -147,23 +197,55 @@ export default function WorkspaceDetailPage() {
     setDocs((d) => d.filter((doc) => doc.id !== docId));
   }
 
+  // ── Workspace rename ─────────────────────────────────────────────────────
+
+  async function renameWorkspace() {
+    if (!renameDraft.trim()) return;
+    await supabase
+      .from('workspaces')
+      .update({ name: renameDraft.trim(), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    setWorkspace((w) => w ? { ...w, name: renameDraft.trim() } : w);
+    setRenamingWorkspace(false);
+  }
+
   function fmtDate(d: string) {
     return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
-  const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
-    { key: 'views', label: 'Views', icon: Eye },
-    { key: 'notes', label: 'Notes', icon: FileText },
-    { key: 'documents', label: 'Documents', icon: Paperclip },
-  ];
+  const pendingCount = tasks.filter((t) => !t.completed).length;
+
+  const TAB_META: Record<Tab, { label: string; icon: React.ElementType }> = {
+    templates: { label: 'Templates', icon: LayoutTemplate },
+    documents: { label: 'Documents', icon: Paperclip },
+    tasks:     { label: 'Tasks',     icon: ListTodo },
+    notes:     { label: 'Notes',     icon: FileText },
+  };
+
+  function onDragStart(key: Tab) { dragTab.current = key; }
+  function onDragOver(e: React.DragEvent) { e.preventDefault(); }
+  function onDrop(targetKey: Tab) {
+    const src = dragTab.current;
+    if (!src || src === targetKey) return;
+    setTabOrder((prev) => {
+      const next = [...prev];
+      const from = next.indexOf(src);
+      const to   = next.indexOf(targetKey);
+      next.splice(from, 1);
+      next.splice(to, 0, src);
+      localStorage.setItem(`tabOrder:${id}`, JSON.stringify(next));
+      return next;
+    });
+    dragTab.current = null;
+  }
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto space-y-4 animate-pulse">
+      <div className="space-y-4 animate-pulse">
         <div className="h-7 w-48 bg-slate-200 dark:bg-slate-700 rounded-lg" />
         <div className="h-10 w-64 bg-slate-100 dark:bg-slate-800 rounded-lg" />
         <div className="space-y-3 mt-6">
-          {[1, 2, 3].map((i) => <div key={i} className="h-20 rounded-xl bg-slate-100 dark:bg-slate-800" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-14 rounded-xl bg-slate-100 dark:bg-slate-800" />)}
         </div>
       </div>
     );
@@ -172,7 +254,7 @@ export default function WorkspaceDetailPage() {
   if (!workspace) return null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Back + title */}
       <div className="space-y-1">
         <button
@@ -183,6 +265,7 @@ export default function WorkspaceDetailPage() {
           All workspaces
         </button>
 
+        <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           {renamingWorkspace ? (
             <>
@@ -215,15 +298,39 @@ export default function WorkspaceDetailPage() {
             </>
           )}
         </div>
+
+        {/* Present / Exit toggle */}
+        {isPresenting ? (
+          <button
+            onClick={exitPresentation}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
+          >
+            <X size={12} /> Exit presentation
+          </button>
+        ) : (
+          <button
+            onClick={() => enterPresentation(id, workspace.name, selectedTemplates)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+          >
+            <MonitorPlay size={13} /> Present
+          </button>
+        )}
+        </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — draggable to reorder */}
       <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
-        {tabs.map(({ key, label, icon: Icon }) => (
+        {tabOrder.map((key) => {
+          const { label, icon: Icon } = TAB_META[key];
+          return (
           <button
             key={key}
+            draggable
+            onDragStart={() => onDragStart(key)}
+            onDragOver={onDragOver}
+            onDrop={() => onDrop(key)}
             onClick={() => setTab(key)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors cursor-grab active:cursor-grabbing select-none ${
               tab === key
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
                 : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
@@ -231,91 +338,178 @@ export default function WorkspaceDetailPage() {
           >
             <Icon size={14} />
             {label}
-            {key === 'views' && views.length > 0 && (
+            {key === 'tasks' && pendingCount > 0 && (
               <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full px-1.5 py-0.5 leading-none">
-                {views.length}
+                {pendingCount}
+              </span>
+            )}
+            {key === 'templates' && selectedTemplates.length > 0 && (
+              <span className="text-xs bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-full px-1.5 py-0.5 leading-none">
+                {selectedTemplates.length}
               </span>
             )}
           </button>
-        ))}
+        );
+        })}
       </div>
 
-      {/* Views tab */}
-      {tab === 'views' && (
-        <div>
-          {views.length === 0 ? (
-            <div className="text-center py-20 text-slate-400 dark:text-slate-600">
-              <Eye size={36} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No saved views yet.</p>
-              <p className="text-xs mt-1">
-                Go to{' '}
-                <button
-                  onClick={() => router.push('/comparisons')}
-                  className="text-indigo-500 hover:underline"
-                >
-                  Comparisons
-                </button>{' '}
-                and save a view into this workspace.
-              </p>
+      {/* Tasks tab */}
+      {tab === 'tasks' && (
+        <div className="space-y-3">
+          {/* Add task input */}
+          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3">
+            <Plus size={14} className="text-slate-400 dark:text-slate-500 shrink-0" />
+            <input
+              ref={taskInputRef}
+              value={newTaskText}
+              onChange={(e) => setNewTaskText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
+              placeholder="Add a task…"
+              disabled={addingTask}
+              className="flex-1 bg-transparent text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none"
+            />
+            {newTaskText.trim() && (
+              <button
+                onClick={addTask}
+                disabled={addingTask}
+                className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 disabled:opacity-40 transition-colors"
+              >
+                Add
+              </button>
+            )}
+          </div>
+
+          {/* Task list */}
+          {tasks.length === 0 ? (
+            <div className="text-center py-16 text-slate-400 dark:text-slate-600">
+              <ListTodo size={36} className="mx-auto mb-3 opacity-25" />
+              <p className="text-sm">No tasks yet</p>
+              <p className="text-xs mt-1 opacity-70">Type above and press Enter to add one</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {views.map((view) => {
-                const isExpanded = expandedView === view.id;
-                return (
-                  <div
-                    key={view.id}
-                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+              {tasks.map((task) => (
+                <div key={task.id} className="flex items-center gap-3 px-4 py-3 group hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                  {/* Circle checkbox */}
+                  <button
+                    onClick={() => toggleTask(task.id, !task.completed)}
+                    className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all ${
+                      task.completed
+                        ? 'bg-emerald-500 border-emerald-500'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400 dark:hover:border-emerald-500'
+                    }`}
                   >
-                    {/* View header — always visible */}
-                    <div className="flex items-center justify-between px-5 py-4 gap-4">
-                      <button
-                        onClick={() => setExpandedView(isExpanded ? null : view.id)}
-                        className="flex-1 flex items-center gap-3 text-left min-w-0"
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{view.name}</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {view.config.symbols?.map((s) => (
-                              <span key={s} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-md">
-                                {s}
-                              </span>
-                            ))}
-                            {view.config.period && (
-                              <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs rounded-md">
-                                {view.config.period.toUpperCase()}
-                              </span>
-                            )}
-                            {view.config.mode && (
-                              <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs rounded-md capitalize">
-                                {view.config.mode === 'pct' ? '% Return' : 'Price'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-slate-400 dark:text-slate-600">
-                          {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => deleteView(view.id)}
-                        title="Delete view"
-                        className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg transition-colors shrink-0"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    {task.completed && <Check size={10} className="text-white" strokeWidth={3} />}
+                  </button>
 
-                    {/* Live chart — shown when expanded */}
-                    {isExpanded && (
-                      <div className="px-5 pb-5 border-t border-slate-100 dark:border-slate-800 pt-4">
-                        <ComparisonChartView config={view.config} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  {/* Task text */}
+                  <span className={`flex-1 text-sm transition-all ${
+                    task.completed
+                      ? 'line-through text-slate-400 dark:text-slate-600'
+                      : 'text-slate-800 dark:text-slate-100'
+                  }`}>
+                    {task.content}
+                  </span>
+
+                  {/* Delete — hover only */}
+                  <button
+                    onClick={() => deleteTask(task.id)}
+                    className="p-1 text-slate-300 dark:text-slate-700 hover:text-rose-500 dark:hover:text-rose-400 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
             </div>
+          )}
+
+          {/* Summary */}
+          {tasks.length > 0 && (
+            <p className="text-xs text-slate-400 dark:text-slate-600">
+              {tasks.filter((t) => t.completed).length} of {tasks.length} completed
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Templates tab */}
+      {tab === 'templates' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Select the templates to include in presentation mode for this workspace.
+            </p>
+            <div className="relative">
+              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                value={templateQuery}
+                onChange={(e) => setTemplateQuery(e.target.value)}
+                placeholder="Search templates…"
+                className="pl-7 pr-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44"
+              />
+            </div>
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
+            {TEMPLATES.filter((tpl) => {
+              const q = templateQuery.trim().toLowerCase();
+              if (!q) return true;
+              return (
+                tpl.label.toLowerCase().includes(q) ||
+                tpl.description.toLowerCase().includes(q) ||
+                tpl.tags.some((tag) => tag.toLowerCase().includes(q))
+              );
+            }).map((tpl) => {
+              const Icon = tpl.icon;
+              const selected = selectedTemplates.includes(tpl.href);
+              return (
+                <button
+                  key={tpl.href}
+                  onClick={() => toggleTemplate(tpl.href)}
+                  className={`w-full flex items-center gap-4 px-5 py-4 text-left transition-colors ${
+                    selected
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                  }`}
+                >
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tpl.iconBg}`}>
+                    <Icon size={16} className={tpl.iconColor} />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${selected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-100'}`}>
+                      {tpl.label}
+                    </p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{tpl.description}</p>
+                    <div className="flex gap-1 mt-1.5 flex-wrap">
+                      {tpl.tags.map((tag) => (
+                        <span key={tag} className="text-[10px] font-medium px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-md">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={`w-5 h-5 rounded-md border-2 shrink-0 flex items-center justify-center transition-colors ${
+                    selected
+                      ? 'bg-indigo-600 border-indigo-600'
+                      : 'border-slate-300 dark:border-slate-600'
+                  }`}>
+                    {selected && <Check size={11} className="text-white" strokeWidth={3} />}
+                  </div>
+                </button>
+              );
+            })}
+            {templateQuery.trim() && !TEMPLATES.some((tpl) => {
+              const q = templateQuery.trim().toLowerCase();
+              return tpl.label.toLowerCase().includes(q) || tpl.description.toLowerCase().includes(q) || tpl.tags.some((tag) => tag.toLowerCase().includes(q));
+            }) && (
+              <p className="text-xs text-slate-400 text-center py-6">No templates match &ldquo;{templateQuery}&rdquo;</p>
+            )}
+          </div>
+          {selectedTemplates.length > 0 && (
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+              {selectedTemplates.length} template{selectedTemplates.length > 1 ? 's' : ''} selected for presentation mode
+            </p>
           )}
         </div>
       )}
@@ -350,7 +544,6 @@ export default function WorkspaceDetailPage() {
       {/* Documents tab */}
       {tab === 'documents' && (
         <div className="space-y-4">
-          {/* Upload area */}
           <div
             onClick={() => !uploading && fileInputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -381,9 +574,7 @@ export default function WorkspaceDetailPage() {
                 <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto">
                   <Upload size={18} className="text-slate-400 dark:text-slate-500" />
                 </div>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                  Click to upload or drag and drop
-                </p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Click to upload or drag and drop</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500">PDF, images, CSV — any file type</p>
               </div>
             )}
@@ -395,7 +586,6 @@ export default function WorkspaceDetailPage() {
             </p>
           )}
 
-          {/* Document list */}
           {docs.length === 0 ? (
             <p className="text-center text-xs text-slate-400 dark:text-slate-600 py-4">
               No documents yet — upload one above.

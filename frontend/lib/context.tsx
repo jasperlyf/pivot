@@ -22,7 +22,7 @@ export const DATE_PRESETS: DateRange[] = [
 ];
 
 export const DEFAULT_SYMBOLS    = ['SPY', 'QQQ', 'ACWI', 'BTC-USD', 'ETH-USD', 'GLD'];
-export const DEFAULT_FAVOURITES = ['SPY', 'QQQ'];
+export const DEFAULT_FAVOURITES = ['SPY'];
 
 export interface UserSettings {
   currency: string;
@@ -49,6 +49,17 @@ interface AppContextType {
   api: string;
   globalDateRange: DateRange;
   setGlobalDateRange: (dr: DateRange) => void;
+  templatePinned: string[];
+  toggleTemplatePinned: (label: string) => void;
+  templateFavourites: string[];
+  toggleTemplateFavourite: (label: string) => void;
+  // Presentation mode
+  presentationMode: boolean;
+  presentationWorkspaceId: string | null;
+  presentationWorkspaceName: string;
+  presentationTemplateHrefs: string[];
+  enterPresentation: (workspaceId: string, name: string, hrefs: string[]) => void;
+  exitPresentation: () => void;
 }
 
 const AppContext = createContext<AppContextType>({
@@ -62,10 +73,19 @@ const AppContext = createContext<AppContextType>({
   api: API,
   globalDateRange: DATE_PRESETS[3],
   setGlobalDateRange: () => {},
+  templatePinned: ['Watchlist', 'Comparison Tool'],
+  toggleTemplatePinned: () => {},
+  templateFavourites: [],
+  toggleTemplateFavourite: () => {},
+  presentationMode: false,
+  presentationWorkspaceId: null,
+  presentationWorkspaceName: '',
+  presentationTemplateHrefs: [],
+  enterPresentation: () => {},
+  exitPresentation: () => {},
 });
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  // Lazy init: only create Supabase client on the client side (not during SSG build)
   const supabase = useRef(typeof window !== 'undefined' ? createClient() : null);
   const [user, setUser]             = useState<User | null>(null);
   const [loading, setLoading]       = useState(true);
@@ -73,7 +93,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettingsState] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [globalDateRange, setGlobalDateRange] = useState<DateRange>(DATE_PRESETS[3]);
 
-  // Resolve session on mount
+  const [templatePinned, setTemplatePinned] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return ['Watchlist', 'Comparison Tool'];
+    try {
+      const stored = localStorage.getItem('templatePinned');
+      return stored ? JSON.parse(stored) : ['Watchlist', 'Comparison Tool'];
+    } catch { return ['Watchlist', 'Comparison Tool']; }
+  });
+
+  const [templateFavourites, setTemplateFavourites] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return JSON.parse(localStorage.getItem('templateFavourites') ?? '[]');
+    } catch { return []; }
+  });
+
+  // Presentation mode state
+  const [presentationMode, setPresentationMode] = useState(false);
+  const [presentationWorkspaceId, setPresentationWorkspaceId] = useState<string | null>(null);
+  const [presentationWorkspaceName, setPresentationWorkspaceName] = useState('');
+  const [presentationTemplateHrefs, setPresentationTemplateHrefs] = useState<string[]>([]);
+
+  const enterPresentation = (workspaceId: string, name: string, hrefs: string[]) => {
+    setPresentationWorkspaceId(workspaceId);
+    setPresentationWorkspaceName(name);
+    setPresentationTemplateHrefs(hrefs);
+    setPresentationMode(true);
+  };
+
+  const exitPresentation = () => {
+    setPresentationMode(false);
+    setPresentationWorkspaceId(null);
+    setPresentationWorkspaceName('');
+    setPresentationTemplateHrefs([]);
+  };
+
+  const toggleTemplatePinned = (label: string) => {
+    setTemplatePinned((prev) => {
+      const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
+      localStorage.setItem('templatePinned', JSON.stringify(next));
+      // If unpinning, also remove from favourites
+      if (!next.includes(label)) {
+        setTemplateFavourites((fav) => {
+          const nf = fav.filter((l) => l !== label);
+          localStorage.setItem('templateFavourites', JSON.stringify(nf));
+          return nf;
+        });
+      }
+      return next;
+    });
+  };
+
+  const toggleTemplateFavourite = (label: string) => {
+    setTemplateFavourites((prev) => {
+      const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
+      localStorage.setItem('templateFavourites', JSON.stringify(next));
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!supabase.current) { setLoading(false); return; }
     supabase.current.auth.getUser().then(({ data }) => {
@@ -86,7 +164,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line
 
-  // Load favourites + settings from DB when user logs in
   useEffect(() => {
     if (!user) {
       setSymbolsState(DEFAULT_FAVOURITES);
@@ -122,7 +199,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
   }, [user]); // eslint-disable-line
 
-  // Persist favourites to DB whenever they change
   const setSymbols = async (newSymbols: string[]) => {
     setSymbolsState(newSymbols);
     if (!user || !supabase.current) return;
@@ -134,7 +210,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Persist a partial settings patch to DB
   const saveSettings = async (patch: Partial<UserSettings>) => {
     const next = { ...settings, ...patch };
     setSettingsState(next);
@@ -157,7 +232,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, loading, signOut, symbols, setSymbols, settings, saveSettings, api: API, globalDateRange, setGlobalDateRange }}>
+    <AppContext.Provider value={{
+      user, loading, signOut, symbols, setSymbols, settings, saveSettings, api: API,
+      globalDateRange, setGlobalDateRange,
+      templatePinned, toggleTemplatePinned, templateFavourites, toggleTemplateFavourite,
+      presentationMode, presentationWorkspaceId, presentationWorkspaceName, presentationTemplateHrefs,
+      enterPresentation, exitPresentation,
+    }}>
       {children}
     </AppContext.Provider>
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useApp } from '@/lib/context';
+import { createClient } from '@/lib/supabase/browser';
 import { Upload, FileText, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface Dataset {
@@ -9,6 +10,12 @@ interface Dataset {
   name: string;
   created_at: string;
   records: { count: number }[];
+}
+
+async function getToken(): Promise<string | null> {
+  const supabase = createClient();
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
 export default function DataSourcesPage() {
@@ -20,17 +27,21 @@ export default function DataSourcesPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [datasetName, setDatasetName] = useState('');
 
-  const load = () =>
-    fetch(`${api}/datasets`)
+  const load = async () => {
+    const token = await getToken();
+    if (!token) return;
+    fetch(`${api}/datasets`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then(setDatasets);
+  };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, []); // eslint-disable-line
 
-  const nameFromFile = (file: File) =>
-    file.name.replace(/\.[^/.]+$/, '');
+  const nameFromFile = (file: File) => file.name.replace(/\.[^/.]+$/, '');
 
   const upload = async (file: File) => {
+    const token = await getToken();
+    if (!token) return;
     const name = datasetName.trim() || nameFromFile(file);
     setUploading(true);
     setStatus(null);
@@ -38,7 +49,11 @@ export default function DataSourcesPage() {
     form.append('file', file);
     form.append('datasetName', name);
     try {
-      const r = await fetch(`${api}/upload`, { method: 'POST', body: form });
+      const r = await fetch(`${api}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
       if (!r.ok) throw new Error((await r.json()).error);
       setStatus({ type: 'success', msg: `"${name}" uploaded successfully` });
       setDatasetName('');
@@ -57,7 +72,12 @@ export default function DataSourcesPage() {
   };
 
   const remove = async (id: string) => {
-    await fetch(`${api}/datasets/${id}`, { method: 'DELETE' });
+    const token = await getToken();
+    if (!token) return;
+    await fetch(`${api}/datasets/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     load();
   };
 

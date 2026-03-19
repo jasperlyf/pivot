@@ -3,11 +3,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useApp, DATE_PRESETS, DateRange } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
-import { Search, Plus, X, Bookmark, Check } from 'lucide-react';
+import { Search, Plus, X } from 'lucide-react';
 import SmartInsights from '@/components/SmartInsights';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer,
+  Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -26,16 +26,6 @@ interface QuoteData {
   marketCap: number | null; week52High: number | null; week52Low: number | null;
   expenseRatio: number | null; currency: string;
 }
-interface AssetStats {
-  symbol: string; dataPoints: number; periodsCovered: string[];
-  annualisedReturn: Record<string, number | null>;
-  annualisedVolatility: Record<string, number | null>;
-  sharpeRatio: Record<string, number | null>;
-  maxDrawdown: Record<string, number | null>;
-  beta: Record<string, number | null>;
-  calmarRatio: Record<string, number | null>;
-  error?: string;
-}
 interface CustomIndex {
   id: string;
   name: string;
@@ -45,12 +35,6 @@ interface CustomIndex {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS  = ['#6366f1', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#84cc16'];
 
-const DATA_PACKS = [
-  { label: 'Global Indices', symbols: ['SPY', 'ACWI', 'EEM', 'DIA'] },
-  { label: 'Tech Growth',    symbols: ['QQQ', 'NVDA', 'TSLA', 'MSFT'] },
-  { label: 'Crypto Basket',  symbols: ['BTC-USD', 'ETH-USD', 'SOL-USD'] },
-  { label: 'Macro',          symbols: ['GLD', 'TLT', 'DXY'] },
-];
 const POPULAR = ['SPY', 'QQQ', 'ACWI', 'EFA', 'EEM', 'IWM', 'BTC-USD', 'ETH-USD', 'GLD', 'TLT', 'NVDA'];
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -72,8 +56,6 @@ function fmtVol(v: number | null) {
   if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
   return `${v}`;
 }
-function fmtPct(v: number | null)   { return v == null ? '—' : `${(v * 100).toFixed(1)}%`; }
-function fmtRatio(v: number | null) { return v == null ? '—' : v.toFixed(2); }
 
 // ── Quote stat groups ─────────────────────────────────────────────────────────
 const STAT_GROUPS: { group: string; rows: { label: string; key: keyof QuoteData; fmt: (v: any) => string }[] }[] = [
@@ -106,16 +88,6 @@ const STAT_GROUPS: { group: string; rows: { label: string; key: keyof QuoteData;
   },
 ];
 
-// ── Performance stat rows ─────────────────────────────────────────────────────
-const PERF_ROWS: { label: string; key: keyof AssetStats; fmt: (v: any) => string; hint: string;
-  best: 'high' | 'low' | 'one' | 'lowneg' }[] = [
-  { label: 'Ann. Return',  key: 'annualisedReturn',     fmt: fmtPct,   hint: 'Geometric annualised return',           best: 'high' },
-  { label: 'Volatility',   key: 'annualisedVolatility', fmt: fmtPct,   hint: 'Annualised std dev of monthly returns', best: 'low'  },
-  { label: 'Sharpe Ratio', key: 'sharpeRatio',          fmt: fmtRatio, hint: 'Excess return / vol (4.5% risk-free)',  best: 'high' },
-  { label: 'Max Drawdown', key: 'maxDrawdown',          fmt: fmtPct,   hint: 'Peak-to-trough decline',                best: 'lowneg' },
-  { label: 'Beta vs SPY',  key: 'beta',                 fmt: fmtRatio, hint: 'Sensitivity to S&P 500 moves',          best: 'one'  },
-  { label: 'Calmar Ratio', key: 'calmarRatio',          fmt: fmtRatio, hint: 'Ann. return / |max drawdown|',          best: 'high' },
-];
 
 // ── Asset picker ───────────────────────────────────────────────────────────────
 function AssetPicker({ value, color, onSelect, onRemove, api, canRemove, customIndexes = [] }: {
@@ -245,17 +217,41 @@ export default function ComparisonsPage() {
 
   const [dateRange, setDateRange]     = useState<DateRange>(DATE_PRESETS[3]);
   const [mode, setMode]               = useState<'price' | 'pct'>('pct');
-  const [slots, setSlots]             = useState<string[]>(['', '']);
+  const [slots, setSlots]             = useState<string[]>(['']);
   const [hiddenStats, setHiddenStats] = useState<Set<string>>(new Set());
-  const [statsWindow, setStatsWindow] = useState<'1Y' | '3Y' | '5Y'>('3Y');
 
-  // Save View modal
-  const [saveOpen, setSaveOpen]           = useState(false);
-  const [saveWorkspaces, setSaveWorkspaces] = useState<{ id: string; name: string }[]>([]);
-  const [saveWsId, setSaveWsId]           = useState('');
-  const [saveViewName, setSaveViewName]   = useState('');
-  const [saveDone, setSaveDone]           = useState(false);
-  const [saving, setSaving]               = useState(false);
+  // Watchlists
+  const [watchlists, setWatchlists] = useState<{ id: string; name: string; symbols: string[] }[]>([]);
+  const [selectedWatchlist, setSelectedWatchlist] = useState<string>('');
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('watchlists')
+      .select('id, name, watchlist_items(symbol, position)')
+      .eq('user_id', user.id)
+      .order('position')
+      .then(({ data }) => {
+        if (data) {
+          setWatchlists(
+            data.map((wl: any) => ({
+              id: wl.id,
+              name: wl.name,
+              symbols: (wl.watchlist_items as any[])
+                .sort((a: any, b: any) => a.position - b.position)
+                .map((i: any) => i.symbol),
+            })).filter((wl) => wl.symbols.length > 0)
+          );
+        }
+      });
+  }, [user]); // eslint-disable-line
+
+  function loadWatchlist(id: string) {
+    setSelectedWatchlist(id);
+    const wl = watchlists.find((w) => w.id === id);
+    if (wl) setSlots(wl.symbols.length > 0 ? wl.symbols : ['']);
+  }
+
 
   // Custom indexes
   const [customIndexes, setCustomIndexes] = useState<CustomIndex[]>([]);
@@ -304,11 +300,20 @@ export default function ComparisonsPage() {
   const allNeededSymbols = [...new Set([...regularSymbols, ...indexComponentSymbols])];
   const symKey = allNeededSymbols.sort().join(',');
 
+  // Performance breakdown (5Y monthly — always fetched for multi-period table)
+  const [perfHistory, setPerfHistory] = useState<HistoryRow[]>([]);
+
+  useEffect(() => {
+    if (!allNeededSymbols.length) { setPerfHistory([]); return; }
+    fetch(`${api}/market-data/history?symbols=${allNeededSymbols.join(',')}&period=5y&interval=1mo`)
+      .then((r) => r.json())
+      .then((d) => setPerfHistory(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, [symKey, api]); // eslint-disable-line
+
   const [allData,      setAllData]      = useState<HistoryRow[]>([]);
   const [quotes,       setQuotes]       = useState<Record<string, QuoteData>>({});
   const [holdings,     setHoldings]     = useState<Record<string, HoldingsData>>({});
-  const [stats,        setStats]        = useState<Record<string, AssetStats>>({});
-  const [statsLoading, setStatsLoading] = useState(false);
   const [chartLoading, setChartLoading] = useState(false);
 
   useEffect(() => {
@@ -348,24 +353,6 @@ export default function ComparisonsPage() {
     });
   }, [symKey, api]); // eslint-disable-line
 
-  // Fetch stats only for regular (non-index) slots
-  useEffect(() => {
-    const missing = regularSymbols.filter((s) => !stats[s]);
-    if (!missing.length) return;
-    setStatsLoading(true);
-    fetch(`${api}/market-data/stats?symbols=${missing.join(',')}`)
-      .then((r) => r.json())
-      .then((data: AssetStats[] | { error?: string }) => {
-        if (!Array.isArray(data)) return;
-        setStats((p) => {
-          const n = { ...p };
-          data.forEach((d) => { n[d.symbol] = d; });
-          return n;
-        });
-      })
-      .catch(() => {})
-      .finally(() => setStatsLoading(false));
-  }, [symKey, api]); // eslint-disable-line
 
   // Build a history map for all fetched data (needed for custom index computation)
   const allNeededHistoryMap = (() => {
@@ -393,13 +380,13 @@ export default function ComparisonsPage() {
       return [...m.values()];
     }
 
-    // pct / normalized mode
+    // pct / normalized mode — 0-based (0% at start)
     const base: Record<string, number> = {};
     const m = new Map<string, Record<string, number>>();
     for (const r of sorted) {
       if (!base[r.asset]) base[r.asset] = r.value;
       if (!m.has(r.date)) m.set(r.date, { date: r.date } as unknown as Record<string, number>);
-      m.get(r.date)![r.asset] = parseFloat(((r.value / base[r.asset]) * 100).toFixed(2));
+      m.get(r.date)![r.asset] = parseFloat(((r.value / base[r.asset] - 1) * 100).toFixed(2));
     }
 
     // Add custom index series
@@ -426,7 +413,7 @@ export default function ComparisonsPage() {
         if (!byDate.has(date)) byDate.set(date, { date } as unknown as Record<string, number>);
         const val = filled.reduce((sum, h) => {
           const pt = allNeededHistoryMap[h.symbol].find((p) => p.date === date);
-          return sum + (h.weight / totalW) * ((pt?.value ?? bases[h.symbol]) / bases[h.symbol]) * 100;
+          return sum + (h.weight / totalW) * ((pt?.value ?? bases[h.symbol]) / bases[h.symbol] - 1) * 100;
         }, 0);
         byDate.get(date)![label] = parseFloat(val.toFixed(2));
       }
@@ -440,9 +427,79 @@ export default function ComparisonsPage() {
     for (const slot of activeSymbols) {
       const key = slotDisplayKey(slot);
       const last = [...chartData].reverse().find((d) => d[key] != null)?.[key] as number | undefined;
-      returns[slot] = last != null ? parseFloat((last - 100).toFixed(1)) : null;
+      returns[slot] = last != null ? parseFloat(last.toFixed(1)) : null;
     }
   }
+
+  // Multi-period returns from 5Y history
+  const periodBreakdown = (() => {
+    const result: Record<string, { '1M': number | null; '3M': number | null; '6M': number | null; '1Y': number | null; '2Y': number | null; '5Y': number | null }> = {};
+    const byAsset: Record<string, { date: string; value: number }[]> = {};
+    for (const r of perfHistory) {
+      if (!byAsset[r.asset]) byAsset[r.asset] = [];
+      byAsset[r.asset].push({ date: r.date, value: r.value });
+    }
+    const now = new Date();
+    const cutoffs: Record<string, Date> = {
+      '1M': new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()),
+      '3M': new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()),
+      '6M': new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()),
+      '1Y': new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()),
+      '2Y': new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()),
+      '5Y': new Date(now.getFullYear() - 5, now.getMonth(), now.getDate()),
+    };
+    // Regular symbols
+    for (const sym of regularSymbols) {
+      const series = (byAsset[sym] ?? []).sort((a, b) => a.date.localeCompare(b.date));
+      if (series.length < 2) { result[sym] = { '1M': null, '3M': null, '6M': null, '1Y': null, '2Y': null, '5Y': null }; continue; }
+      const last = series[series.length - 1].value;
+      const pct = (period: string) => {
+        const cut = cutoffs[period];
+        const base = series.find((p) => new Date(p.date) >= cut);
+        if (!base) return null;
+        return parseFloat(((last / base.value - 1) * 100).toFixed(1));
+      };
+      result[sym] = { '1M': pct('1M'), '3M': pct('3M'), '6M': pct('6M'), '1Y': pct('1Y'), '2Y': pct('2Y'), '5Y': pct('5Y') };
+    }
+
+    // Custom index slots — build weighted series from component perfHistory
+    for (const slot of activeSymbols.filter((s) => s.startsWith('idx:'))) {
+      const idx = customIndexes.find((ci) => ci.id === slot.slice(4));
+      if (!idx) continue;
+      const filled = idx.holdings.filter((h) => byAsset[h.symbol]?.length > 0);
+      if (!filled.length) continue;
+      const totalW = filled.reduce((s, h) => s + h.weight, 0);
+      if (!totalW) continue;
+
+      // All dates present in all components
+      const dateSets = filled.map((h) => new Set((byAsset[h.symbol] ?? []).map((p) => p.date)));
+      const commonDates = [...dateSets[0]].filter((d) => dateSets.every((s) => s.has(d))).sort();
+      if (commonDates.length < 2) continue;
+
+      // Build weighted index series (absolute price-like, rebased to 100 at first date)
+      const baseVals: Record<string, number> = {};
+      for (const h of filled) baseVals[h.symbol] = byAsset[h.symbol].find((p) => p.date === commonDates[0])!.value;
+
+      const series = commonDates.map((date) => ({
+        date,
+        value: filled.reduce((sum, h) => {
+          const pt = byAsset[h.symbol].find((p) => p.date === date);
+          return sum + (h.weight / totalW) * ((pt?.value ?? baseVals[h.symbol]) / baseVals[h.symbol]);
+        }, 0),
+      }));
+
+      const last = series[series.length - 1].value;
+      const pct = (period: string) => {
+        const cut = cutoffs[period];
+        const base = series.find((p) => new Date(p.date) >= cut);
+        if (!base) return null;
+        return parseFloat(((last / base.value - 1) * 100).toFixed(1));
+      };
+      result[slot] = { '1M': pct('1M'), '3M': pct('3M'), '6M': pct('6M'), '1Y': pct('1Y'), '2Y': pct('2Y'), '5Y': pct('5Y') };
+    }
+
+    return result;
+  })();
 
   // Holdings — only regular ETF slots
   const etfsWithHoldings = regularSymbols.filter((s) => holdings[s]?.holdings.length);
@@ -458,150 +515,35 @@ export default function ComparisonsPage() {
     .sort((a, b) => b.total - a.total);
 
   // Compute performance metrics for custom index slots from raw history (mode-independent)
-  const indexMetrics = (() => {
-    const result: Record<string, { annualisedReturn: number | null; annualisedVolatility: number | null; sharpeRatio: number | null; maxDrawdown: number | null }> = {};
-    for (const slot of activeSymbols.filter((s) => s.startsWith('idx:'))) {
-      const idx = customIndexes.find((ci) => ci.id === slot.slice(4));
-      if (!idx) continue;
-      const filled = idx.holdings.filter((h) => allNeededHistoryMap[h.symbol]?.length > 0);
-      if (!filled.length) continue;
-      const dateSets = filled.map((h) => new Set(allNeededHistoryMap[h.symbol].map((p) => p.date)));
-      const commonDates = [...dateSets[0]].filter((d) => dateSets.every((s) => s.has(d))).sort();
-      const totalW = filled.reduce((s, h) => s + h.weight, 0);
-      if (!totalW || commonDates.length < 6) continue;
-      const bases: Record<string, number> = {};
-      for (const h of filled) bases[h.symbol] = allNeededHistoryMap[h.symbol].find((p) => p.date === commonDates[0])?.value ?? 1;
-      const series = commonDates.map((date) => ({
-        date,
-        value: filled.reduce((sum, h) => {
-          const pt = allNeededHistoryMap[h.symbol].find((p) => p.date === date);
-          return sum + (h.weight / totalW) * ((pt?.value ?? bases[h.symbol]) / bases[h.symbol]) * 100;
-        }, 0),
-      }));
-      if (series.length < 6) continue;
-      const first = series[0].value, last = series[series.length - 1].value;
-      const days = (new Date(series[series.length - 1].date).getTime() - new Date(series[0].date).getTime()) / 86400000;
-      const years = Math.max(days / 365.25, 0.1);
-      const annRet = Math.pow(last / first, 1 / years) - 1;
-      const rets = series.slice(1).map((p, i) => (p.value - series[i].value) / series[i].value);
-      const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
-      const variance = rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length - 1);
-      const annVol = Math.sqrt(variance) * Math.sqrt(rets.length / years);
-      const rfPeriod = Math.pow(1.045, years / rets.length) - 1;
-      const excess = rets.map((r) => r - rfPeriod);
-      const exMean = excess.reduce((a, b) => a + b, 0) / excess.length;
-      const exVar = excess.reduce((a, b) => a + (b - exMean) ** 2, 0) / (excess.length - 1);
-      const sharpe = annVol > 0 ? (exMean / Math.sqrt(exVar)) * Math.sqrt(rets.length / years) : null;
-      let peak = first, maxDD = 0;
-      for (const p of series) { if (p.value > peak) peak = p.value; const dd = (p.value - peak) / peak; if (dd < maxDD) maxDD = dd; }
-      result[slot] = { annualisedReturn: annRet, annualisedVolatility: annVol, sharpeRatio: sharpe, maxDrawdown: maxDD };
-    }
-    return result;
-  })();
 
-  // Best-value highlighting for perf stats (only for regular symbols)
-  const bestFor = (rowKey: keyof AssetStats, best: string) => {
-    const vals = regularSymbols.map((s) => {
-      const v = stats[s]?.[rowKey] as Record<string, number | null> | undefined;
-      return v ? (v[statsWindow] ?? null) : null;
-    }).filter((v) => v != null) as number[];
-    if (vals.length < 2) return null;
-    if (best === 'high')   return Math.max(...vals);
-    if (best === 'low')    return Math.min(...vals);
-    if (best === 'lowneg') return Math.max(...vals);
-    if (best === 'one')    return vals.reduce((a, b) => Math.abs(b - 1) < Math.abs(a - 1) ? b : a);
-    return null;
-  };
-
-  const sharpeColor = (v: number | null) => {
-    if (v == null) return 'text-slate-800 dark:text-slate-200';
-    if (v >= 1)    return 'text-emerald-600 font-semibold';
-    if (v >= 0.5)  return 'text-amber-600';
-    return 'text-rose-600';
-  };
 
   const hasData = activeSymbols.length > 0;
-
-  async function openSaveModal() {
-    if (!user) return;
-    const { data } = await supabase
-      .from('workspaces')
-      .select('id, name')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
-    setSaveWorkspaces(data ?? []);
-    setSaveWsId(data?.[0]?.id ?? '');
-    setSaveViewName('');
-    setSaveDone(false);
-    setSaveOpen(true);
-  }
-
-  async function saveView() {
-    if (!saveWsId || !saveViewName.trim()) return;
-    setSaving(true);
-    await supabase.from('workspace_views').insert({
-      workspace_id: saveWsId,
-      name: saveViewName.trim(),
-      config: { symbols: slots.filter(Boolean), period: dateRange.period, interval: dateRange.interval, mode },
-    });
-    await supabase
-      .from('workspaces')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', saveWsId);
-    setSaving(false);
-    setSaveDone(true);
-  }
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Comparisons</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Compare any assets — performance, risk, and holdings</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1">
-            {DATE_PRESETS.map((p) => (
-              <button key={p.label} onClick={() => setDateRange(p)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${dateRange.label === p.label ? 'bg-indigo-600 text-white shadow-sm dark:shadow-none' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden text-xs font-medium">
-            <button onClick={() => setMode('pct')}   className={`px-3 py-1.5 transition-colors ${mode === 'pct'   ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>% Return</button>
-            <button onClick={() => setMode('price')} className={`px-3 py-1.5 transition-colors ${mode === 'price' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>Price</button>
-          </div>
-          {hasData && (
-            <button
-              onClick={openSaveModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg transition-colors"
-            >
-              <Bookmark size={13} />
-              Save View
-            </button>
-          )}
-        </div>
+      <div>
+        <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Comparison Tool</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Compare any assets — performance, risk, and holdings</p>
       </div>
 
-      {/* Data pack presets */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">Load pack:</span>
-        {DATA_PACKS.map((pack) => {
-          const active = slots.length === pack.symbols.length && pack.symbols.every((s, i) => slots[i] === s);
-          return (
-            <button key={pack.label} onClick={() => setSlots(pack.symbols)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                active
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-400'
-              }`}>
-              {pack.label}
-            </button>
-          );
-        })}
-      </div>
+
+      {/* Watchlist selector */}
+      {watchlists.length > 0 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider shrink-0">From watchlist:</span>
+          <select
+            value={selectedWatchlist}
+            onChange={(e) => loadWatchlist(e.target.value)}
+            className="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+          >
+            <option value="">Select a watchlist…</option>
+            {watchlists.map((wl) => (
+              <option key={wl.id} value={wl.id}>{wl.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Asset pickers */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -629,51 +571,52 @@ export default function ComparisonsPage() {
         </div>
       )}
 
-      {/* Smart insights */}
-      {regularSymbols.length >= 2 && (
-        <SmartInsights symbols={regularSymbols} api={api} period="1Y" />
-      )}
 
       {/* Chart */}
       {hasData && (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none p-5">
-          <div className={`transition-opacity duration-300 ${chartLoading ? 'opacity-40' : 'opacity-100'}`}>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false}
-                width={mode === 'price' ? 60 : 40}
-                tickFormatter={mode === 'price' ? (v) => `$${Number(v).toLocaleString()}` : (v) => `${v}`} />
-              <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
-                formatter={(v, name) => mode === 'price'
-                  ? [`$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`, name]
-                  : [`${v}`, name]} />
-              <Legend formatter={(v) => <span className="text-xs text-slate-600 dark:text-slate-400">{v}</span>} iconType="circle" iconSize={8} />
-              {activeSymbols.map((slot) => (
-                <Line key={slot} type="monotone" dataKey={slotDisplayKey(slot)}
-                  stroke={COLORS[slots.indexOf(slot) % COLORS.length]} strokeWidth={2} dot={false} connectNulls
-                  animationDuration={400} animationEasing="ease-out" />
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none">
+          <div className="flex items-center justify-between gap-2 px-5 pt-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex gap-1 bg-slate-50 dark:bg-slate-800 rounded-lg p-1">
+              {DATE_PRESETS.map((p) => (
+                <button key={p.label} onClick={() => setDateRange(p)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${dateRange.label === p.label ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                  {p.label}
+                </button>
               ))}
-            </LineChart>
-          </ResponsiveContainer>
-          {mode === 'pct' && Object.keys(returns).length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-              {activeSymbols.map((slot) => {
-                const ret = returns[slot]; if (ret == null) return null;
-                const pos = ret >= 0;
-                const label = slotDisplayKey(slot);
-                return (
-                  <span key={slot} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${pos ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700' : 'bg-rose-50 dark:bg-rose-950 text-rose-700'}`}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[slots.indexOf(slot) % COLORS.length] }} />
-                    {label} {pos ? '+' : ''}{ret}%
-                  </span>
-                );
-              })}
             </div>
-          )}
+            <div className="flex bg-slate-50 dark:bg-slate-800 rounded-lg overflow-hidden text-xs font-medium">
+              <button onClick={() => setMode('pct')}   className={`px-3 py-1.5 transition-colors ${mode === 'pct'   ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>% Return</button>
+              <button onClick={() => setMode('price')} className={`px-3 py-1.5 transition-colors ${mode === 'price' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>Price</button>
+            </div>
+          </div>
+          <div className={`p-5 transition-opacity duration-300 ${chartLoading ? 'opacity-40' : 'opacity-100'}`}>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false}
+                  width={mode === 'price' ? 60 : 48}
+                  tickFormatter={mode === 'price' ? (v) => `$${Number(v).toLocaleString()}` : (v) => `${v}%`} />
+                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, fontSize: 12 }}
+                  formatter={(v, name) => mode === 'price'
+                    ? [`$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`, name]
+                    : [`${Number(v) >= 0 ? '+' : ''}${v}%`, name]} />
+                <Legend formatter={(v) => <span className="text-xs text-slate-600 dark:text-slate-400">{v}</span>} iconType="circle" iconSize={8} />
+                {mode === 'pct' && <ReferenceLine y={0} stroke="#e2e8f0" strokeDasharray="4 4" strokeWidth={1.5} />}
+                {activeSymbols.map((slot) => (
+                  <Line key={slot} type="monotone" dataKey={slotDisplayKey(slot)}
+                    stroke={COLORS[slots.indexOf(slot) % COLORS.length]} strokeWidth={2} dot={false} connectNulls
+                    animationDuration={400} animationEasing="ease-out" />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
+      )}
+
+      {/* Smart insights */}
+      {regularSymbols.length >= 2 && (
+        <SmartInsights symbols={regularSymbols} api={api} period="1Y" />
       )}
 
       {/* Comparison table — performance + quote stats */}
@@ -707,12 +650,7 @@ export default function ComparisonsPage() {
                           </p>
                         )}
                         {q && (
-                          <>
-                            <p className="text-xs text-slate-400 dark:text-slate-500 truncate leading-tight">{q.name}</p>
-                            <p className={`text-xs font-semibold ${(q.changePct ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              {q.changePct != null ? `${(q.changePct ?? 0) >= 0 ? '+' : ''}${q.changePct}% today` : ''}
-                            </p>
-                          </>
+                          <p className="text-xs text-slate-400 dark:text-slate-500 truncate leading-tight">{q.name}</p>
                         )}
                       </div>
                     </th>
@@ -726,99 +664,6 @@ export default function ComparisonsPage() {
               </tr>
             </thead>
             <tbody>
-              {/* ── Performance section ── */}
-              <tr>
-                <td colSpan={slots.length + 2} className="px-5 pt-5 pb-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Performance</span>
-                    <div className="flex gap-1">
-                      {(['1Y', '3Y', '5Y'] as const).map((w) => (
-                        <button key={w} onClick={() => setStatsWindow(w)}
-                          className={`text-[10px] px-2 py-0.5 rounded font-semibold transition-colors ${statsWindow === w ? 'bg-indigo-600 text-white' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                          {w}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </td>
-              </tr>
-              {PERF_ROWS.filter(({ key }) => !hiddenStats.has(key as string)).map(({ label, key, fmt, hint, best }) => {
-                const bestVal = bestFor(key, best);
-                return (
-                  <tr key={key as string} className="group/row hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition-colors">
-                    <td className="px-5 py-2.5 text-xs text-slate-500 dark:text-slate-400">
-                      <div className="flex items-center gap-2">
-                        <span title={hint} className="cursor-help">{label}</span>
-                        <button onClick={() => setHiddenStats((p) => new Set([...p, key as string]))}
-                          className="opacity-0 group-hover/row:opacity-100 text-slate-300 dark:text-slate-600 hover:text-rose-400 transition-all">
-                          <X size={10} />
-                        </button>
-                      </div>
-                    </td>
-                    {slots.map((slot, i) => {
-                      const isIdx = slot.startsWith('idx:');
-                      const isDD     = key === 'maxDrawdown';
-                      const isSharpe = key === 'sharpeRatio';
-
-                      if (isIdx) {
-                        const im = indexMetrics[slot];
-                        // Keys that map from indexMetrics to PERF_ROWS key
-                        const idxKeyMap: Record<string, keyof typeof im> = {
-                          annualisedReturn: 'annualisedReturn',
-                          annualisedVolatility: 'annualisedVolatility',
-                          sharpeRatio: 'sharpeRatio',
-                          maxDrawdown: 'maxDrawdown',
-                        };
-                        const imKey = idxKeyMap[key as string];
-                        const raw = im && imKey ? im[imKey] : null;
-                        return (
-                          <td key={i} className="px-5 py-2.5 border-l border-slate-50 dark:border-slate-800 tabular-nums text-sm">
-                            {raw == null ? (
-                              <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
-                            ) : (
-                              <span className={`px-1.5 py-0.5 rounded ${
-                                isSharpe ? sharpeColor(raw) :
-                                isDD ? 'text-rose-600 font-medium' :
-                                key === 'annualisedReturn' ? (raw >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold') :
-                                'text-slate-800 dark:text-slate-200 font-medium'
-                              }`}>
-                                {fmt(raw)}
-                              </span>
-                            )}
-                          </td>
-                        );
-                      }
-
-                      const s = slot ? stats[slot] : null;
-                      const avail = s?.periodsCovered?.includes(statsWindow);
-                      const raw   = avail ? (s![key] as Record<string, number | null>)[statsWindow] : null;
-                      const isBest = bestVal != null && raw === bestVal;
-                      return (
-                        <td key={i} className="px-5 py-2.5 border-l border-slate-50 dark:border-slate-800 tabular-nums text-sm">
-                          {statsLoading && !s ? (
-                            <span className="inline-block w-12 h-3 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
-                          ) : !slot ? (
-                            <span className="text-slate-200 dark:text-slate-700">—</span>
-                          ) : !avail ? (
-                            <span className="text-slate-300 dark:text-slate-600 text-xs">N/A</span>
-                          ) : (
-                            <span className={`px-1.5 py-0.5 rounded ${isBest ? 'bg-emerald-50 dark:bg-emerald-950' : ''} ${
-                              isSharpe ? sharpeColor(raw) :
-                              isDD ? 'text-rose-600 font-medium' :
-                              key === 'annualisedReturn' && raw != null ? (raw >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold') :
-                              'text-slate-800 dark:text-slate-200 font-medium'
-                            }`}>
-                              {fmt(raw)}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="border-l border-slate-50 dark:border-slate-800" />
-                  </tr>
-                );
-              })}
-
               {/* ── Quote stat groups ── */}
               {STAT_GROUPS.map(({ group, rows }) => {
                 const visible = rows.filter(({ key }) =>
@@ -869,6 +714,42 @@ export default function ComparisonsPage() {
                     </tr>
                   )),
                 ];
+              })}
+
+              {/* ── Performance section ── */}
+              <tr>
+                <td colSpan={slots.length + 2} className="px-5 pt-5 pb-1">
+                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Performance</span>
+                </td>
+              </tr>
+              {(['1M', '3M', '6M', '1Y', '2Y', '5Y'] as const).map((period) => {
+                const vals = regularSymbols.map((s) => periodBreakdown[s]?.[period] ?? null);
+                const bestVal = vals.reduce<number | null>((b, v) => v != null && (b == null || v > b) ? v : b, null);
+                return (
+                  <tr key={period} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition-colors">
+                    <td className="px-5 py-2.5 text-xs text-slate-500 dark:text-slate-400 font-medium">{period}</td>
+                    {slots.map((slot, i) => {
+                      const val = periodBreakdown[slot]?.[period] ?? null;
+                      const isBest = val != null && val === bestVal;
+                      const pos = val != null && val >= 0;
+                      return (
+                        <td key={i} className="px-5 py-2.5 border-l border-slate-50 dark:border-slate-800 tabular-nums text-sm">
+                          {val == null ? (
+                            <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+                          ) : (
+                            <span className={`px-1.5 py-0.5 rounded font-semibold ${
+                              isBest ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400' :
+                              pos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                            }`}>
+                              {pos ? '+' : ''}{val.toFixed(1)}%
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="border-l border-slate-50 dark:border-slate-800" />
+                  </tr>
+                );
               })}
             </tbody>
           </table>
@@ -948,102 +829,6 @@ export default function ComparisonsPage() {
         </div>
       )}
 
-      {/* Save View Modal */}
-      {saveOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Save View to Workspace</h2>
-              <button onClick={() => setSaveOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <X size={16} />
-              </button>
-            </div>
-
-            {saveDone ? (
-              <div className="text-center py-6 space-y-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center mx-auto">
-                  <Check size={20} className="text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">View saved!</p>
-                <button
-                  onClick={() => setSaveOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Config summary */}
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3 space-y-2">
-                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">Config to save</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {slots.filter(Boolean).map((s) => (
-                      <span key={s} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-md">
-                        {s.startsWith('idx:') ? (customIndexes.find((i) => i.id === s.slice(4))?.name ?? 'Custom Index') : s}
-                      </span>
-                    ))}
-                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs rounded-md">
-                      {dateRange.label}
-                    </span>
-                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-xs rounded-md capitalize">
-                      {mode === 'pct' ? '% Return' : 'Price'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* View name */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">View name</label>
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="e.g. Tech vs Macro – 1Y"
-                    value={saveViewName}
-                    onChange={(e) => setSaveViewName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') saveView(); }}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                {/* Workspace picker */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Workspace</label>
-                  {saveWorkspaces.length === 0 ? (
-                    <p className="text-sm text-slate-400 dark:text-slate-500">No workspaces found. Create one first.</p>
-                  ) : (
-                    <select
-                      value={saveWsId}
-                      onChange={(e) => setSaveWsId(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {saveWorkspaces.map((w) => (
-                        <option key={w.id} value={w.id}>{w.name}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={saveView}
-                    disabled={!saveViewName.trim() || !saveWsId || saving}
-                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    {saving ? 'Saving…' : 'Save View'}
-                  </button>
-                  <button
-                    onClick={() => setSaveOpen(false)}
-                    className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

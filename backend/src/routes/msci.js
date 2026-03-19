@@ -29,7 +29,8 @@ function parseMsciPdf(text) {
       const m = l.match(/\b(\w+\s+\d{1,2},\s*\d{4})\b/);
       if (m) effectiveDate = m[1];
     }
-    if (/^MSCI .+ INDEXES$/i.test(l)) title = l;
+    const titleM = l.match(/^(MSCI\s+.+?\s+INDEXES?)\b/i);
+    if (titleM) title = titleM[1].trim();
   }
 
   // ── Country summary table ──

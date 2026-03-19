@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
 import {
@@ -743,55 +744,109 @@ export default function MsciRebalancePage() {
               </div>
 
               {/* Summary tab */}
-              {activeTab === 'summary' && (
-                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 dark:border-slate-800">
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Country</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Added</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Deleted</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Net</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-36">Activity</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {countryStats.map(({ country, added, deleted, net }) => {
-                        const addPct = Math.round((added / maxTotal) * 100);
-                        const delPct = Math.round((deleted / maxTotal) * 100);
-                        return (
-                          <tr key={country}
-                            className="border-b border-slate-50 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-                            onClick={() => { setActiveTab('byindex'); setExpanded({ [country]: true }); }}>
-                            <td className="px-5 py-3 text-xs font-semibold text-slate-800 dark:text-slate-200">{country}</td>
-                            <td className="px-5 py-3">
-                              <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
-                                <ArrowUpRight size={11} />{added}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3">
-                              <span className="flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400 tabular-nums">
-                                <ArrowDownRight size={11} />{deleted}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3">
-                              <span className={`text-xs font-bold tabular-nums ${net > 0 ? 'text-emerald-600 dark:text-emerald-400' : net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
-                                {net > 0 ? '+' : ''}{net}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3">
-                              <div className="flex gap-0.5 h-2.5 rounded overflow-hidden bg-slate-100 dark:bg-slate-800">
-                                <div className="bg-emerald-400 dark:bg-emerald-600 h-full" style={{ width: `${addPct}%` }} />
-                                <div className="bg-rose-400 dark:bg-rose-600 h-full" style={{ width: `${delPct}%` }} />
-                              </div>
-                            </td>
+              {activeTab === 'summary' && (() => {
+                const PIE_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16'];
+                const TOP_N = 9;
+                const sorted = [...countryStats].sort((a, b) => (b.added + b.deleted) - (a.added + a.deleted));
+                const top = sorted.slice(0, TOP_N);
+                const otherTotal = sorted.slice(TOP_N).reduce((s, c) => s + c.added + c.deleted, 0);
+                const addPieData = [
+                  ...top.map((c) => ({ name: c.country, value: c.added })),
+                  ...(otherTotal > 0 ? [{ name: 'Other', value: sorted.slice(TOP_N).reduce((s, c) => s + c.added, 0) }] : []),
+                ].filter((d) => d.value > 0);
+                const delPieData = [
+                  ...top.map((c) => ({ name: c.country, value: c.deleted })),
+                  ...(otherTotal > 0 ? [{ name: 'Other', value: sorted.slice(TOP_N).reduce((s, c) => s + c.deleted, 0) }] : []),
+                ].filter((d) => d.value > 0);
+                return (
+                  <div className="space-y-4">
+                    {/* Donut charts */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {[{ label: 'Additions by Country', data: addPieData, color: '#10b981' },
+                        { label: 'Deletions by Country', data: delPieData, color: '#ef4444' }].map(({ label, data, color }) => (
+                        <div key={label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4">
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">{label}</p>
+                          <div className="flex items-center gap-4">
+                            <div className="w-36 h-36 shrink-0">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={data} cx="50%" cy="50%" innerRadius="55%" outerRadius="85%"
+                                    dataKey="value" paddingAngle={2}
+                                    onClick={(d) => { if (d.name !== 'Other') { setActiveTab('byindex'); setExpanded({ [d.name]: true }); } }}>
+                                    {data.map((_, i) => (
+                                      <Cell key={i} fill={i < TOP_N ? PIE_COLORS[i % PIE_COLORS.length] : '#cbd5e1'} className="cursor-pointer" />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip formatter={(v: any, n: any) => [v, n]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                              {data.map((d, i) => (
+                                <button key={d.name} onClick={() => { if (d.name !== 'Other') { setActiveTab('byindex'); setExpanded({ [d.name]: true }); } }}
+                                  className="w-full flex items-center gap-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800 rounded px-1 py-0.5 transition-colors">
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: i < TOP_N ? PIE_COLORS[i % PIE_COLORS.length] : '#cbd5e1' }} />
+                                  <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate flex-1">{d.name}</span>
+                                  <span className="text-[11px] font-semibold tabular-nums shrink-0" style={{ color: i < TOP_N ? PIE_COLORS[i % PIE_COLORS.length] : '#94a3b8' }}>{d.value}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Country table */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Country</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Added</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Deleted</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Net</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-36">Activity</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        </thead>
+                        <tbody>
+                          {countryStats.map(({ country, added, deleted, net }) => {
+                            const addPct = Math.round((added / maxTotal) * 100);
+                            const delPct = Math.round((deleted / maxTotal) * 100);
+                            return (
+                              <tr key={country}
+                                className="border-b border-slate-50 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                                onClick={() => { setActiveTab('byindex'); setExpanded({ [country]: true }); }}>
+                                <td className="px-5 py-3 text-xs font-semibold text-slate-800 dark:text-slate-200">{country}</td>
+                                <td className="px-5 py-3">
+                                  <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                    <ArrowUpRight size={11} />{added}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3">
+                                  <span className="flex items-center gap-1 text-xs font-medium text-rose-600 dark:text-rose-400 tabular-nums">
+                                    <ArrowDownRight size={11} />{deleted}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3">
+                                  <span className={`text-xs font-bold tabular-nums ${net > 0 ? 'text-emerald-600 dark:text-emerald-400' : net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
+                                    {net > 0 ? '+' : ''}{net}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-3">
+                                  <div className="flex gap-0.5 h-2.5 rounded overflow-hidden bg-slate-100 dark:bg-slate-800">
+                                    <div className="bg-emerald-400 dark:bg-emerald-600 h-full" style={{ width: `${addPct}%` }} />
+                                    <div className="bg-rose-400 dark:bg-rose-600 h-full" style={{ width: `${delPct}%` }} />
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* By Index tab */}
               {activeTab === 'byindex' && (

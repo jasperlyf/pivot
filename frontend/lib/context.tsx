@@ -226,8 +226,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSymbolsState(DEFAULT_FAVOURITES);
     setSettingsState(DEFAULT_SETTINGS);
-    setTemplatePinned(['Watchlist', 'Comparison Tool']);
-    setTemplateFavourites([]);
   };
 
   return (

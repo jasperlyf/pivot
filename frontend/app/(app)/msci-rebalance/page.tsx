@@ -772,7 +772,7 @@ export default function MsciRebalancePage() {
                                 <PieChart>
                                   <Pie data={data} cx="50%" cy="50%" innerRadius="55%" outerRadius="85%"
                                     dataKey="value" paddingAngle={2}
-                                    onClick={(d) => { if (d.name !== 'Other') { setActiveTab('byindex'); setExpanded({ [d.name]: true }); } }}>
+                                    onClick={(d) => { const n = String(d.name ?? ''); if (n && n !== 'Other') { setActiveTab('byindex'); setExpanded({ [n]: true }); } }}>
                                     {data.map((_, i) => (
                                       <Cell key={i} fill={i < TOP_N ? PIE_COLORS[i % PIE_COLORS.length] : '#cbd5e1'} className="cursor-pointer" />
                                     ))}

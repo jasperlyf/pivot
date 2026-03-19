@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
@@ -95,7 +95,7 @@ function AssetSearch({ onAdd, api, existing }: { onAdd: (s: string) => void; api
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
-export default function IndexBuilderPage() {
+function IndexBuilderInner() {
   const { api, user } = useApp();
   const supabase = createClient();
   const searchParams = useSearchParams();
@@ -449,4 +449,8 @@ export default function IndexBuilderPage() {
 
     </div>
   );
+}
+
+export default function IndexBuilderPage() {
+  return <Suspense><IndexBuilderInner /></Suspense>;
 }

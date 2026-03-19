@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/context';
 import { createClient } from '@/lib/supabase/browser';
@@ -98,7 +98,7 @@ function AssetSearch({ api, onSelect }: { api: string; onSelect: (symbol: string
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function PortfolioPage() {
+function PortfolioInner() {
   const { api, user } = useApp();
   const supabase = createClient();
   const searchParams = useSearchParams();
@@ -459,4 +459,8 @@ export default function PortfolioPage() {
       )}
     </div>
   );
+}
+
+export default function PortfolioPage() {
+  return <Suspense><PortfolioInner /></Suspense>;
 }

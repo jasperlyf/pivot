@@ -48,8 +48,8 @@ export default function LibraryDatasetPage() {
           const cats = [...new Set(records.map((r: any) => r.category).filter(Boolean))] as string[];
           return { id: ds.id, name: ds.name, createdAt: ds.created_at, recordCount: records.length, categories: cats };
         }));
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      });
   }
 
   useEffect(() => { loadItems(); }, [user]); // eslint-disable-line
@@ -57,7 +57,7 @@ export default function LibraryDatasetPage() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this dataset? This cannot be undone.')) return;
     setDeletingId(id);
-    await supabase.from('datasets').delete().eq('id', id).eq('user_id', user.id);
+    await supabase.from('datasets').delete().eq('id', id).eq('user_id', user!.id);
     setDeletingId(null);
     loadItems();
   }

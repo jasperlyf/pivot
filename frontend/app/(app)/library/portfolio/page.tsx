@@ -48,8 +48,8 @@ export default function LibraryPortfolioPage() {
             .sort((a, b) => b.weight - a.weight)
             .map((h: any) => ({ symbol: h.asset_symbol, weight: h.weight })),
         })));
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      });
   }
 
   useEffect(() => { loadItems(); }, [user]); // eslint-disable-line

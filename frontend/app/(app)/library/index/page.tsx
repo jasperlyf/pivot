@@ -48,8 +48,8 @@ export default function LibraryIndexPage() {
             .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
             .map((h: any) => ({ symbol: h.asset_symbol, weight: h.weight ?? 0 })),
         })));
-      })
-      .finally(() => setLoading(false));
+        setLoading(false);
+      });
   }
 
   useEffect(() => { loadItems(); }, [user]); // eslint-disable-line

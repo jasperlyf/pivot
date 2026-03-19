@@ -51,6 +51,9 @@ export default function WatchlistPage() {
   const [creatingList, setCreatingList] = useState(false);
   const [newListName,  setNewListName]  = useState('');
 
+  // List context menu
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+
   // Drag-and-drop
   const dragItem = useRef<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);

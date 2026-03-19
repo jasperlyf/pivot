@@ -120,6 +120,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!user || !supabase.current) return;
     supabase.current.from('user_settings').upsert({
       user_id: user.id,
+      currency: settings.currency,
+      metric:   settings.metric,
+      group_by: settings.groupBy,
+      theme:    settings.theme,
       template_pinned: pinned,
       template_favourites: favs,
       updated_at: new Date().toISOString(),
